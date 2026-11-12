@@ -1,5 +1,6 @@
-import React, { useState, useRef } from 'react';
+﻿import React, { useState, useRef, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { getRoadmapPdfUrl } from '../services/roadmapPdfStorage';
 import { RoadmapPdfRecord } from '../types';
 import {
   FileText,
@@ -23,6 +24,34 @@ export const RoadmapPdfPage: React.FC = () => {
     deletePdf,
     userRole
   } = useApp();
+  const [pdfUrls, setPdfUrls] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPdfUrls = async () => {
+      const entries = await Promise.all(
+        state.uploadedPdfs.map(async pdf => {
+          try {
+            return [pdf.id, await getRoadmapPdfUrl(pdf)] as const;
+          } catch (error) {
+            console.error(`Could not load PDF ${pdf.filename}:`, error);
+            return [pdf.id, pdf.fileUrl] as const;
+          }
+        })
+      );
+
+      if (!cancelled) {
+        setPdfUrls(Object.fromEntries(entries));
+      }
+    };
+
+    void loadPdfUrls();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [state.uploadedPdfs]);
 
   const isOwner = userRole === 'owner';
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -103,12 +132,19 @@ export const RoadmapPdfPage: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (!isOwner) return;
-    const ok = deletePdf(id);
+
+    const ok = await deletePdf(id);
+
     if (ok) {
       setDeleteConfirmId(null);
-      setUploadStatus({ message: 'PDF removed from storage.', type: 'info' });
+      setUploadStatus({ message: 'PDF removed from cloud storage.', type: 'info' });
+    } else {
+      setUploadStatus({
+        message: 'PDF could not be deleted. Please try again.',
+        type: 'error',
+      });
     }
   };
 
@@ -166,7 +202,7 @@ export const RoadmapPdfPage: React.FC = () => {
         ) : (
           <div className="px-3 py-1.5 rounded-xl bg-white border border-[#E0DCD3] text-[#78716C] text-xs font-semibold flex items-center gap-2 shadow-sm">
             <Eye className="w-3.5 h-3.5 text-[#E7826D]" />
-            <span>Guest Preview Mode · Read Only</span>
+            <span>Guest Preview Mode Â· Read Only</span>
           </div>
         )}
       </div>
@@ -285,13 +321,13 @@ export const RoadmapPdfPage: React.FC = () => {
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#78716C]">
                       <span>Size: <strong className="font-mono text-[#292929]">{pdf.fileSizeBytesFormatted}</strong></span>
-                      <span>·</span>
+                      <span>Â·</span>
                       <span>Uploaded: <strong className="text-[#292929]">{new Date(pdf.uploadTimestamp).toLocaleDateString('en-US', { dateStyle: 'medium' })}</strong></span>
-                      <span>·</span>
+                      <span>Â·</span>
                       <span>Version: <strong className="font-mono text-[#292929]">v{pdf.version}</strong></span>
                       {pdf.extractedSummary && (
                         <>
-                          <span>·</span>
+                          <span>Â·</span>
                           <span className="text-[#16A34A] font-mono font-bold">{pdf.extractedSummary.coveragePct}% Content Coverage</span>
                         </>
                       )}
@@ -316,7 +352,7 @@ export const RoadmapPdfPage: React.FC = () => {
 
                   {/* Open / Download */}
                   <a
-                    href={pdf.fileUrl}
+                    href={pdfUrls[pdf.id] || pdf.fileUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="p-1.5 rounded-lg bg-white hover:bg-[#FAF8F5] text-[#292929] border border-[#E0DCD3] text-xs font-medium flex items-center gap-1 cursor-pointer"
@@ -326,7 +362,7 @@ export const RoadmapPdfPage: React.FC = () => {
                   </a>
 
                   <a
-                    href={pdf.fileUrl}
+                    href={pdfUrls[pdf.id] || pdf.fileUrl}
                     download={pdf.filename}
                     className="p-1.5 rounded-lg bg-white hover:bg-[#FAF8F5] text-[#292929] border border-[#E0DCD3] text-xs font-medium flex items-center gap-1 cursor-pointer"
                     title="Download original PDF file"
@@ -372,7 +408,7 @@ export const RoadmapPdfPage: React.FC = () => {
             </div>
             <div className="flex items-center gap-2">
               <a
-                href={currentPreviewRecord.fileUrl}
+                href={pdfUrls[currentPreviewRecord.id] || currentPreviewRecord.fileUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="px-3 py-1 bg-[#FAF8F5] hover:bg-[#F3EFE6] text-[#292929] text-xs rounded-lg flex items-center gap-1.5 border border-[#E0DCD3] font-semibold"
@@ -386,7 +422,7 @@ export const RoadmapPdfPage: React.FC = () => {
           {/* Embedded Viewer Element */}
           <div className="w-full h-[650px] bg-[#FAF8F5] rounded-xl overflow-hidden border border-[#E0DCD3] relative">
             <iframe
-              src={currentPreviewRecord.fileUrl}
+              src={pdfUrls[currentPreviewRecord.id] || currentPreviewRecord.fileUrl}
               title={currentPreviewRecord.filename}
               className="w-full h-full border-none"
             />
@@ -484,3 +520,5 @@ export const RoadmapPdfPage: React.FC = () => {
     </div>
   );
 };
+
+

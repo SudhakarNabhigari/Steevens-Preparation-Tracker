@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useApp, NavigationPage } from '../context/AppContext';
 import {
   LayoutDashboard,
@@ -80,7 +80,7 @@ export const Navigation: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#E7826D] animate-pulse" />
             <span className="font-semibold text-[#F3EFE6]">
-              GUEST PREVIEW MODE — Changes are temporary and will not affect Steeven's preparation.
+              GUEST PREVIEW MODE â€” Changes are temporary and will not affect Steeven's preparation.
             </span>
           </div>
           <button
@@ -133,7 +133,7 @@ export const Navigation: React.FC = () => {
                 STEEVEN'S 180-DAY PREPARATION TRACKER
               </span>
               <span className="text-[10px] text-[#A8A49C] hidden sm:block">
-                Main (180d) · DSA in C++ (100d) · Azure (100d) · Asia/Kolkata
+                Main (180d) | DSA in C++ (100d) | Azure (100d) | Asia/Kolkata
               </span>
             </div>
           </button>
@@ -185,14 +185,15 @@ export const Navigation: React.FC = () => {
 
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1F1F1F] border border-[#3D3D3D] text-xs">
             {isOwner ? (
-              <span className="font-semibold text-[#F3EFE6] whitespace-nowrap">Steeven — Owner</span>
+              <span className="font-semibold text-[#F3EFE6] whitespace-nowrap">Steeven - Owner</span>
             ) : (
-              <span className="font-semibold text-[#E7826D] whitespace-nowrap">Guest — Preview</span>
+              <span className="font-semibold text-[#E7826D] whitespace-nowrap">Guest â€” Preview</span>
             )}
           </div>
 
           <button
-            onClick={logout}
+            type="button"
+            onClick={() => logout()}
             className="p-2 text-[#C2BEB5] hover:text-[#F3EFE6] hover:bg-[#3D3D3D] rounded-lg transition-colors cursor-pointer"
             title="Log Out"
           >
@@ -275,3 +276,6 @@ export const Navigation: React.FC = () => {
     </header>
   );
 };
+
+
+

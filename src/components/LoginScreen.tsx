@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { UserRole } from '../types';
 import {
@@ -31,7 +31,7 @@ export const LoginScreen: React.FC = () => {
     setPassword('');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage(null);
 
@@ -42,16 +42,18 @@ export const LoginScreen: React.FC = () => {
 
     setIsLoading(true);
 
-    setTimeout(() => {
-      const success = login(username, password, selectedOption);
-      setIsLoading(false);
+    try {
+      const success = await login(username, password, selectedOption);
       if (!success) {
-        // Generic message without revealing which field was incorrect
-        setErrorMessage('Invalid credentials. Please verify your username and password.');
+        setErrorMessage('Login failed. Check your credentials and internet connection.');
       }
-    }, 350);
+    } catch (error) {
+      console.error('Login request failed:', error);
+      setErrorMessage('Unable to sign in. Please try again.');
+    } finally {
+      setIsLoading(false);
+    }
   };
-
   return (
     <div className="min-h-screen bg-[#F3EFE6] text-[#292929] flex flex-col justify-center items-center px-4 py-12 relative">
       <div className="w-full max-w-md z-10 space-y-6">
@@ -64,7 +66,7 @@ export const LoginScreen: React.FC = () => {
             STEEVEN'S 180-DAY PREPARATION TRACKER
           </h1>
           <p className="text-xs text-[#5A5650] max-w-sm mx-auto">
-            End-to-End Production RAG Learning System · 16 Nov 2026 – 14 May 2027
+            End-to-End Production RAG Learning System Â· 16 Nov 2026 â€“ 14 May 2027
           </p>
         </div>
 
@@ -188,9 +190,10 @@ export const LoginScreen: React.FC = () => {
 
         {/* Minimal Footer */}
         <div className="text-center text-xs text-[#736E65]">
-          <span>Protected Personal Preparation Environment · Asia/Kolkata</span>
+          <span>Protected Personal Preparation Environment Â· Asia/Kolkata</span>
         </div>
       </div>
     </div>
   );
 };
+

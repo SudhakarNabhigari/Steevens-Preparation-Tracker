@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   DaySchedule,
   DayStatus,
@@ -34,6 +34,13 @@ import {
   exportBackupJson,
   importBackupJson
 } from '../services/storage';
+import { supabase } from '../lib/supabase';
+import { migrateLegacyRoadmapPdfs, deleteRoadmapPdfFromStorage } from '../services/roadmapPdfStorage';
+import {
+  OWNER_AUTH_EMAIL,
+  loadOrMigrateOwnerProgress,
+  saveOwnerProgressToCloud
+} from '../services/cloudProgress';
 
 export type NavigationPage =
   | 'login'
@@ -88,7 +95,7 @@ interface AppContextType {
   getTrackDayTaskCompletion: (track: TrackId, dayNumber: number) => { completed: number; total: number; percentage: number };
 
   // Authentication
-  login: (username: string, pass: string, targetRole: UserRole) => boolean;
+  login: (username: string, pass: string, targetRole: UserRole) => Promise<boolean>;
   logout: () => void;
   updateCredentials: (username: string, password: string) => void;
 
@@ -116,7 +123,7 @@ interface AppContextType {
   // PDF Management
   uploadRoadmapPdf: (file: File) => Promise<{ success: boolean; message: string; pdfId?: string }>;
   setActivePdf: (pdfId: string) => void;
-  deletePdf: (pdfId: string) => boolean;
+  deletePdf: (pdfId: string) => Promise<boolean>;
 
   // Resource Library Actions
   addResource: (item: Omit<ResourceItem, 'id' | 'dateAdded'>) => { success: boolean; message: string; id?: string };
@@ -162,12 +169,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [nowTimestamp, setNowTimestamp] = useState<number>(Date.now());
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ownerAuthUserIdRef = useRef<string | null>(null);
+  const loginInProgressRef = useRef(false);
 
   // Rehydrate asynchronously from IndexedDB for maximum permanent persistence
   useEffect(() => {
     async function rehydrateFromDB() {
       const key = state.role === 'owner' ? OWNER_STORAGE_KEY : GUEST_STORAGE_KEY;
       const dbData = await loadFromIndexedDB(key);
+      if (loginInProgressRef.current || ownerAuthUserIdRef.current) return;
       if (
         dbData &&
         dbData.lastSavedTimestamp &&
@@ -241,7 +251,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [setSelectedDayNumber, setSelectedDsaDay, setSelectedAzureDay]
   );
 
-  // Permanent Auto-Save on state changes
+  // Permanent local save + Supabase cloud save
   useEffect(() => {
     if (!state.isAuthenticated) return;
 
@@ -249,15 +259,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
     saveTimeoutRef.current = setTimeout(async () => {
-      const ok = await saveRoleStatePermanent(state);
-      setSaveStatus(ok ? 'saved' : 'error');
+      const localOk = await saveRoleStatePermanent({ ...state });
+      let cloudOk = true;
+
+      if (state.role === 'owner' && ownerAuthUserIdRef.current) {
+        try {
+          await saveOwnerProgressToCloud(ownerAuthUserIdRef.current, state);
+        } catch (error) {
+          console.error('Supabase progress save failed:', error);
+          cloudOk = false;
+        }
+      }
+
+      setSaveStatus(localOk && cloudOk ? 'saved' : 'error');
     }, 250);
 
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, [state]);
-
   // Keep live second tick
   useEffect(() => {
     const interval = setInterval(() => {
@@ -342,7 +362,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [state.isAuthenticated, state.role, isPreparationLocked, currentPage]);
 
-  // Timer engine — completely isolated per trackId
+  // Timer engine â€” completely isolated per trackId
   useEffect(() => {
     if (!state.timerState.isActive || state.timerState.isPaused) return;
 
@@ -559,52 +579,119 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ]
   );
 
-  // Login
-  const login = useCallback((user: string, pass: string, targetRole: UserRole): boolean => {
+  // Login: Supabase authentication for owner, local authentication for guest
+  const login = useCallback(async (
+    user: string,
+    pass: string,
+    targetRole: UserRole
+  ): Promise<boolean> => {
     const trimmedUser = user.trim().toLowerCase();
 
-    if (targetRole === 'owner') {
-      const isSteeven = trimmedUser === 'steeven';
-      const isPassValid = pass === 'Nani@011' || pass === 'Nani@0111';
-      if (isSteeven && isPassValid) {
-        const ownerState = loadRoleStateSync('owner');
-        ownerState.isAuthenticated = true;
-        setState(ownerState);
-        setSelectedDayNumberState(ownerState.lastActiveDayNumber || 1);
-        setSelectedDsaDayState(ownerState.dsaProgress?.lastActiveDayNumber || 1);
-        setSelectedAzureDayState(ownerState.azureProgress?.lastActiveDayNumber || 1);
-        return true;
+    if (targetRole === 'guest') {
+      if (trimmedUser !== 'guest' || pass !== 'Guest@0111') return false;
+
+      ownerAuthUserIdRef.current = null;
+      const guestState = loadRoleStateSync('guest');
+      guestState.isAuthenticated = true;
+      setState(guestState);
+      setSelectedDayNumberState(guestState.lastActiveDayNumber || 1);
+      setSelectedDsaDayState(guestState.dsaProgress?.lastActiveDayNumber || 1);
+      setSelectedAzureDayState(guestState.azureProgress?.lastActiveDayNumber || 1);
+      return true;
+    }
+
+    if (trimmedUser !== 'steeven' || !pass) return false;
+
+    loginInProgressRef.current = true;
+
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: OWNER_AUTH_EMAIL,
+        password: pass
+      });
+
+      if (error || !data.user) return false;
+
+      ownerAuthUserIdRef.current = data.user.id;
+
+      const cachedState = loadRoleStateSync('owner');
+      const indexedState = await loadFromIndexedDB(OWNER_STORAGE_KEY);
+
+      const localState =
+        indexedState?.lastSavedTimestamp &&
+        (!cachedState.lastSavedTimestamp ||
+          indexedState.lastSavedTimestamp > cachedState.lastSavedTimestamp)
+          ? hydrateUserState(indexedState, 'owner')
+          : cachedState;
+
+      const cloudState = await loadOrMigrateOwnerProgress(data.user.id, localState);
+
+      let ownerProgress = cloudState;
+
+      try {
+        const migratedPdfs = await migrateLegacyRoadmapPdfs(
+          data.user.id,
+          cloudState.uploadedPdfs || []
+        );
+
+        const migrationChanged = migratedPdfs.some((pdf, index) =>
+          pdf.storagePath !== cloudState.uploadedPdfs?.[index]?.storagePath ||
+          pdf.fileUrl !== cloudState.uploadedPdfs?.[index]?.fileUrl
+        );
+
+        if (migrationChanged) {
+          ownerProgress = {
+            ...cloudState,
+            uploadedPdfs: migratedPdfs,
+          };
+
+          await saveOwnerProgressToCloud(data.user.id, ownerProgress);
+          console.info('Legacy roadmap PDFs migrated to Supabase Storage.');
+        }
+      } catch (migrationError) {
+        console.error('Legacy PDF migration failed. Original PDF data was preserved:', migrationError);
       }
+
+      const ownerState = { ...ownerProgress, isAuthenticated: true };
+
+      setState(ownerState);
+      setSelectedDayNumberState(ownerState.lastActiveDayNumber || 1);
+      setSelectedDsaDayState(ownerState.dsaProgress?.lastActiveDayNumber || 1);
+      setSelectedAzureDayState(ownerState.azureProgress?.lastActiveDayNumber || 1);
+
+      return true;
+    } catch (error) {
+      console.error('Owner login/cloud loading failed:', error);
+      ownerAuthUserIdRef.current = null;
+      await supabase.auth.signOut();
       return false;
-    } else {
-      const isGuest = trimmedUser === 'guest';
-      const isPassValid = pass === 'Guest@0111';
-      if (isGuest && isPassValid) {
-        const guestState = loadRoleStateSync('guest');
-        guestState.isAuthenticated = true;
-        setState(guestState);
-        setSelectedDayNumberState(guestState.lastActiveDayNumber || 1);
-        setSelectedDsaDayState(guestState.dsaProgress?.lastActiveDayNumber || 1);
-        setSelectedAzureDayState(guestState.azureProgress?.lastActiveDayNumber || 1);
-        return true;
-      }
-      return false;
+    } finally {
+      loginInProgressRef.current = false;
     }
   }, []);
 
   const logout = useCallback(() => {
+    console.log('[LOGOUT] Function called');
+    const wasOwner = state.role === 'owner';
+    ownerAuthUserIdRef.current = null;
+
+    if (wasOwner) {
+      void supabase.auth.signOut().catch(error => {
+        console.error('Supabase sign-out failed:', error);
+      });
+    }
+
     setState(prev => {
       const loggedOut = {
         ...prev,
         isAuthenticated: false,
         timerState: { ...prev.timerState, isActive: false, isPaused: false }
       };
-      saveRoleStatePermanent(loggedOut);
+      void saveRoleStatePermanent(loggedOut);
       return loggedOut;
     });
     setCurrentPage('login');
-  }, []);
-
+  }, [state.role]);
   const updateCredentials = useCallback(
     (newUsername: string, newPassword: string) => {
       if (state.role !== 'owner') return;
@@ -957,47 +1044,64 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, message: 'Invalid file type. Only PDF documents (.pdf) are allowed.' };
       }
 
-      return new Promise(resolve => {
-        const reader = new FileReader();
-        reader.onload = e => {
-          const dataUrl = e.target?.result as string;
-          const newId = `pdf_${Date.now()}`;
-          const newRecord: RoadmapPdfRecord = {
-            id: newId,
-            filename: file.name,
-            fileSize: file.size,
-            fileSizeBytesFormatted: `${(file.size / 1024).toFixed(1)} KB`,
-            uploadTimestamp: new Date().toISOString(),
-            ownerId: 'steeven_owner',
-            storagePath: `/uploaded_roadmaps/${file.name}`,
-            fileUrl: dataUrl,
-            version: (state.uploadedPdfs.length || 1) + 1,
-            isActiveRoadmap: false,
-            extractedSummary: {
-              pages: 20,
-              topicsCount: 180,
-              coveragePct: 100.0
-            }
-          };
+      const userId = ownerAuthUserIdRef.current;
 
-          setState(prev => ({
-            ...prev,
-            uploadedPdfs: [newRecord, ...prev.uploadedPdfs]
-          }));
+      if (!userId) {
+        return { success: false, message: 'Please log in again before uploading a PDF.' };
+      }
 
-          resolve({ success: true, message: 'PDF uploaded and saved permanently.', pdfId: newId });
+      const newId = `pdf_${Date.now()}`;
+      const safeFilename = file.name.replace(/[^\w.-]+/g, '_');
+      const storagePath = `${userId}/${newId}-${safeFilename}`;
+
+      try {
+        const { error } = await supabase.storage
+          .from('roadmap-pdfs')
+          .upload(storagePath, file, {
+            contentType: 'application/pdf',
+            upsert: false,
+          });
+
+        if (error) throw error;
+
+        const newRecord: RoadmapPdfRecord = {
+          id: newId,
+          filename: file.name,
+          fileSize: file.size,
+          fileSizeBytesFormatted: `${(file.size / 1024).toFixed(1)} KB`,
+          uploadTimestamp: new Date().toISOString(),
+          ownerId: userId,
+          storagePath,
+          fileUrl: '',
+          version: (state.uploadedPdfs.length || 1) + 1,
+          isActiveRoadmap: false,
+          extractedSummary: {
+            pages: 20,
+            topicsCount: 180,
+            coveragePct: 100.0,
+          },
         };
 
-        reader.onerror = () => {
-          resolve({ success: false, message: 'Failed to read file contents.' });
-        };
+        setState(prev => ({
+          ...prev,
+          uploadedPdfs: [newRecord, ...prev.uploadedPdfs],
+        }));
 
-        reader.readAsDataURL(file);
-      });
+        return {
+          success: true,
+          message: 'PDF uploaded successfully to secure cloud storage.',
+          pdfId: newId,
+        };
+      } catch (error) {
+        console.error('Roadmap PDF upload failed:', error);
+        return {
+          success: false,
+          message: error instanceof Error ? error.message : 'PDF upload failed. Please try again.',
+        };
+      }
     },
     [state.role, state.uploadedPdfs]
   );
-
   const setActivePdf = useCallback(
     (pdfId: string) => {
       if (state.role !== 'owner') return;
@@ -1015,25 +1119,47 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const deletePdf = useCallback(
-    (pdfId: string): boolean => {
+    async (pdfId: string): Promise<boolean> => {
       if (state.role !== 'owner') return false;
 
-      let success = false;
-      setState(prev => {
-        if (prev.uploadedPdfs.length <= 1) return prev;
-        success = true;
-        const updated = prev.uploadedPdfs.filter(p => p.id !== pdfId);
-        const nextActiveId = prev.activePdfId === pdfId ? updated[0].id : prev.activePdfId;
+      const pdfToDelete = state.uploadedPdfs.find(p => p.id === pdfId);
 
-        return {
-          ...prev,
-          uploadedPdfs: updated,
-          activePdfId: nextActiveId
-        };
-      });
-      return success;
+      if (!pdfToDelete || state.uploadedPdfs.length <= 1) {
+        return false;
+      }
+
+      try {
+        if (
+          pdfToDelete.storagePath &&
+          !pdfToDelete.storagePath.startsWith('/') &&
+          pdfToDelete.storagePath.includes('/')
+        ) {
+          await deleteRoadmapPdfFromStorage(pdfToDelete.storagePath);
+        }
+
+        setState(prev => {
+          const updated = prev.uploadedPdfs.filter(p => p.id !== pdfId);
+
+          if (updated.length === prev.uploadedPdfs.length || updated.length === 0) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            uploadedPdfs: updated,
+            activePdfId: prev.activePdfId === pdfId
+              ? updated[0].id
+              : prev.activePdfId,
+          };
+        });
+
+        return true;
+      } catch (error) {
+        console.error('PDF deletion failed:', error);
+        return false;
+      }
     },
-    [state.role]
+    [state.role, state.uploadedPdfs]
   );
 
   // Backup & Reset
@@ -1386,3 +1512,11 @@ export function useApp() {
   }
   return context;
 }
+
+
+
+
+
+
+
+
