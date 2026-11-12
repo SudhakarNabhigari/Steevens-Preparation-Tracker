@@ -1,7 +1,16 @@
-import { UserState, RoadmapPdfRecord } from '../types';
+import { UserState, RoadmapPdfRecord, TrackProgressState } from '../types';
 
 export const OWNER_STORAGE_KEY = 'steeven_180day_prep_owner_permanent_v3';
 export const GUEST_STORAGE_KEY = 'steeven_180day_prep_guest_sandbox_v3';
+
+export const DEFAULT_TRACK_PROGRESS = (): TrackProgressState => ({
+  completedTasks: {},
+  completedDays: {},
+  dayNotes: {},
+  studyTimeSeconds: {},
+  revisionRecords: {},
+  lastActiveDayNumber: 1
+});
 
 export const DEFAULT_AUTHORITATIVE_PDF: RoadmapPdfRecord = {
   id: 'authoritative_roadmap_rag_180',
@@ -22,14 +31,60 @@ export const DEFAULT_AUTHORITATIVE_PDF: RoadmapPdfRecord = {
   }
 };
 
+export const DEFAULT_DSA_PDF: RoadmapPdfRecord = {
+  id: 'authoritative_roadmap_dsa_100',
+  filename: 'DSA_CPP_100_Day_180_Style_Daily_Curriculum.pdf',
+  fileSize: 224500,
+  fileSizeBytesFormatted: '219.2 KB',
+  uploadTimestamp: '2026-11-12T00:00:00.000Z',
+  ownerId: 'steeven_owner',
+  storagePath: '/assets/aistudio/DSA_CPP_100_Day_180_Style_Daily_Curriculum_7bad3ece.pdf',
+  fileUrl: '/assets/aistudio/DSA_CPP_100_Day_180_Style_Daily_Curriculum_7bad3ece.pdf',
+  version: 1,
+  isActiveRoadmap: false,
+  isDefaultSourcePdf: true,
+  extractedSummary: {
+    pages: 22,
+    topicsCount: 100,
+    coveragePct: 100.0
+  }
+};
+
+export const DEFAULT_AZURE_PDF: RoadmapPdfRecord = {
+  id: 'authoritative_roadmap_azure_100',
+  filename: 'Azure_100_Day_180_Style_Daily_Curriculum.pdf',
+  fileSize: 228100,
+  fileSizeBytesFormatted: '222.8 KB',
+  uploadTimestamp: '2026-11-12T00:00:00.000Z',
+  ownerId: 'steeven_owner',
+  storagePath: '/assets/aistudio/Azure_100_Day_180_Style_Daily_Curriculum_a614b703.pdf',
+  fileUrl: '/assets/aistudio/Azure_100_Day_180_Style_Daily_Curriculum_a614b703.pdf',
+  version: 1,
+  isActiveRoadmap: false,
+  isDefaultSourcePdf: true,
+  extractedSummary: {
+    pages: 22,
+    topicsCount: 100,
+    coveragePct: 100.0
+  }
+};
+
+function mergeDefaultTrackPdfs(existing: RoadmapPdfRecord[] | undefined): RoadmapPdfRecord[] {
+  const base = existing && existing.length > 0 ? [...existing] : [DEFAULT_AUTHORITATIVE_PDF];
+  const ids = new Set(base.map(p => p.id));
+  if (!ids.has(DEFAULT_DSA_PDF.id)) base.push(DEFAULT_DSA_PDF);
+  if (!ids.has(DEFAULT_AZURE_PDF.id)) base.push(DEFAULT_AZURE_PDF);
+  return base;
+}
+
 // Initial state for Steeven (Owner) — STRICTLY ZERO FAKE PROGRESS
 export const DEFAULT_OWNER_STATE: UserState = {
   username: 'Steeven',
   passwordHash: 'Nani@011',
   role: 'owner',
   isAuthenticated: false,
-  completedTasks: {}, // Strictly empty initially
-  completedDays: {},  // Strictly empty initially
+  completedTasks: {},
+  completedDays: {},
   dayNotes: {},
   studyTimeSeconds: {},
   assessmentSubmissions: {},
@@ -39,15 +94,19 @@ export const DEFAULT_OWNER_STATE: UserState = {
   timerState: {
     isActive: false,
     isPaused: false,
+    trackId: 'main',
     dayNumber: 1,
     targetSeconds: 4 * 3600,
     elapsedSeconds: 0,
     remainingSeconds: 4 * 3600,
     type: 'daily'
   },
+  trackTimerSnapshots: {},
+  dsaProgress: DEFAULT_TRACK_PROGRESS(),
+  azureProgress: DEFAULT_TRACK_PROGRESS(),
   simulationDate: null,
   simulationEnabled: false,
-  uploadedPdfs: [DEFAULT_AUTHORITATIVE_PDF],
+  uploadedPdfs: [DEFAULT_AUTHORITATIVE_PDF, DEFAULT_DSA_PDF, DEFAULT_AZURE_PDF],
   activePdfId: 'authoritative_roadmap_rag_180',
   resources: [],
   doubtEntries: []
@@ -70,15 +129,19 @@ export const DEFAULT_GUEST_STATE: UserState = {
   timerState: {
     isActive: false,
     isPaused: false,
+    trackId: 'main',
     dayNumber: 1,
     targetSeconds: 4 * 3600,
     elapsedSeconds: 0,
     remainingSeconds: 4 * 3600,
     type: 'daily'
   },
+  trackTimerSnapshots: {},
+  dsaProgress: DEFAULT_TRACK_PROGRESS(),
+  azureProgress: DEFAULT_TRACK_PROGRESS(),
   simulationDate: null,
   simulationEnabled: true,
-  uploadedPdfs: [DEFAULT_AUTHORITATIVE_PDF],
+  uploadedPdfs: [DEFAULT_AUTHORITATIVE_PDF, DEFAULT_DSA_PDF, DEFAULT_AZURE_PDF],
   activePdfId: 'authoritative_roadmap_rag_180',
   resources: [],
   doubtEntries: []
@@ -119,7 +182,7 @@ function openDatabase(): Promise<IDBDatabase | null> {
   });
 }
 
-export async function saveToIndexedDB(key: string, data: any): Promise<boolean> {
+export async function saveToIndexedDB(key: string, data: unknown): Promise<boolean> {
   const db = await openDatabase();
   if (!db) return false;
 
@@ -137,7 +200,7 @@ export async function saveToIndexedDB(key: string, data: any): Promise<boolean> 
   });
 }
 
-export async function loadFromIndexedDB(key: string): Promise<any | null> {
+export async function loadFromIndexedDB(key: string): Promise<UserState | null> {
   const db = await openDatabase();
   if (!db) return null;
 
@@ -149,7 +212,7 @@ export async function loadFromIndexedDB(key: string): Promise<any | null> {
 
       req.onsuccess = () => {
         if (req.result && req.result.data) {
-          resolve(req.result.data);
+          resolve(req.result.data as UserState);
         } else {
           resolve(null);
         }
@@ -161,6 +224,48 @@ export async function loadFromIndexedDB(key: string): Promise<any | null> {
   });
 }
 
+export function hydrateUserState(parsed: Partial<UserState>, role: 'owner' | 'guest'): UserState {
+  const defaultState = role === 'owner' ? DEFAULT_OWNER_STATE : DEFAULT_GUEST_STATE;
+  const dsaDefault = DEFAULT_TRACK_PROGRESS();
+  const azureDefault = DEFAULT_TRACK_PROGRESS();
+
+  return {
+    ...defaultState,
+    ...parsed,
+    role,
+    lastActiveDayNumber: parsed.lastActiveDayNumber || defaultState.lastActiveDayNumber || 1,
+    timerState: {
+      ...defaultState.timerState,
+      ...(parsed.timerState || {}),
+      trackId: parsed.timerState?.trackId || 'main'
+    },
+    trackTimerSnapshots: parsed.trackTimerSnapshots || {},
+    dsaProgress: {
+      ...dsaDefault,
+      ...(parsed.dsaProgress || {}),
+      completedTasks: parsed.dsaProgress?.completedTasks || {},
+      completedDays: parsed.dsaProgress?.completedDays || {},
+      dayNotes: parsed.dsaProgress?.dayNotes || {},
+      studyTimeSeconds: parsed.dsaProgress?.studyTimeSeconds || {},
+      revisionRecords: parsed.dsaProgress?.revisionRecords || {},
+      lastActiveDayNumber: parsed.dsaProgress?.lastActiveDayNumber || 1
+    },
+    azureProgress: {
+      ...azureDefault,
+      ...(parsed.azureProgress || {}),
+      completedTasks: parsed.azureProgress?.completedTasks || {},
+      completedDays: parsed.azureProgress?.completedDays || {},
+      dayNotes: parsed.azureProgress?.dayNotes || {},
+      studyTimeSeconds: parsed.azureProgress?.studyTimeSeconds || {},
+      revisionRecords: parsed.azureProgress?.revisionRecords || {},
+      lastActiveDayNumber: parsed.azureProgress?.lastActiveDayNumber || 1
+    },
+    uploadedPdfs: mergeDefaultTrackPdfs(parsed.uploadedPdfs),
+    resources: Array.isArray(parsed.resources) ? parsed.resources : [],
+    doubtEntries: Array.isArray(parsed.doubtEntries) ? parsed.doubtEntries : []
+  };
+}
+
 // Synchronous fast load from localStorage cache
 export function loadRoleStateSync(role: 'owner' | 'guest'): UserState {
   const key = role === 'owner' ? OWNER_STORAGE_KEY : GUEST_STORAGE_KEY;
@@ -169,22 +274,8 @@ export function loadRoleStateSync(role: 'owner' | 'guest'): UserState {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return defaultState;
-    const parsed = JSON.parse(raw);
-    return {
-      ...defaultState,
-      ...parsed,
-      role,
-      lastActiveDayNumber: parsed.lastActiveDayNumber || defaultState.lastActiveDayNumber || 1,
-      timerState: {
-        ...defaultState.timerState,
-        ...(parsed.timerState || {})
-      },
-      uploadedPdfs: (parsed.uploadedPdfs && parsed.uploadedPdfs.length > 0)
-        ? parsed.uploadedPdfs
-        : [DEFAULT_AUTHORITATIVE_PDF],
-      resources: Array.isArray(parsed.resources) ? parsed.resources : [],
-      doubtEntries: Array.isArray(parsed.doubtEntries) ? parsed.doubtEntries : []
-    };
+    const parsed = JSON.parse(raw) as Partial<UserState>;
+    return hydrateUserState(parsed, role);
   } catch (err) {
     console.error(`Failed to load ${role} storage:`, err);
     return defaultState;
@@ -225,15 +316,15 @@ export function exportBackupJson(state: UserState): void {
 // Backup Import
 export function importBackupJson(jsonString: string): UserState | null {
   try {
-    const parsed = JSON.parse(jsonString);
+    const parsed = JSON.parse(jsonString) as Partial<UserState>;
     if (parsed && typeof parsed === 'object') {
-      const merged: UserState = {
-        ...DEFAULT_OWNER_STATE,
-        ...parsed,
-        role: 'owner',
-        isAuthenticated: true,
-        lastActiveDayNumber: parsed.lastActiveDayNumber || 1
-      };
+      const merged = hydrateUserState(
+        {
+          ...parsed,
+          isAuthenticated: true
+        },
+        'owner'
+      );
       saveRoleStatePermanent(merged);
       return merged;
     }

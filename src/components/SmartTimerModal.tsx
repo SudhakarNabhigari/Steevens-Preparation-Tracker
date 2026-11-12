@@ -32,6 +32,13 @@ export const SmartTimerModal: React.FC = () => {
     ? Math.min(100, Math.round((activeTimer.elapsedSeconds / activeTimer.targetSeconds) * 100))
     : 0;
 
+  const trackBadge =
+    activeTimer.trackId === 'dsa'
+      ? 'DSA C++'
+      : activeTimer.trackId === 'azure'
+      ? 'AZURE'
+      : 'MAIN';
+
   return (
     <div className="fixed bottom-6 right-6 z-50">
       {/* Minimized Floating Pill */}
@@ -45,7 +52,7 @@ export const SmartTimerModal: React.FC = () => {
           </div>
           <div>
             <div className="text-[10px] uppercase font-bold text-[#E0DCD3]">
-              {activeTimer.type === 'assessment' ? 'Exam Timer' : `Day ${activeTimer.dayNumber} Timer`}
+              {trackBadge} · {activeTimer.type === 'assessment' ? 'Exam Timer' : `Day ${activeTimer.dayNumber}`}
             </div>
             <div className="font-mono text-sm font-bold text-white tabular-nums">
               {formatTime(activeTimer.remainingSeconds)}
@@ -70,7 +77,7 @@ export const SmartTimerModal: React.FC = () => {
             <div className="flex items-center gap-2">
               <Timer className="w-4 h-4 text-[#E7826D] animate-pulse" />
               <span className="text-xs font-bold text-white uppercase tracking-wider">
-                {activeTimer.type === 'assessment' ? 'Weekly Assessment Timer' : `Day ${activeTimer.dayNumber} Preparation Timer`}
+                {trackBadge} · {activeTimer.type === 'assessment' ? 'Weekly Assessment Timer' : `Day ${activeTimer.dayNumber} Preparation Timer`}
               </span>
             </div>
             <button

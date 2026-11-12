@@ -20,7 +20,9 @@ import {
   RefreshCw,
   Check,
   Library,
-  AlertTriangle
+  AlertTriangle,
+  Code2,
+  Cloud
 } from 'lucide-react';
 
 export const Navigation: React.FC = () => {
@@ -41,20 +43,21 @@ export const Navigation: React.FC = () => {
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // All 12 items
   const navItems: { id: NavigationPage; label: string; icon: React.FC<{ className?: string }> }[] = [
     { id: 'home_dashboard', label: 'Home Dashboard', icon: LayoutDashboard },
-    { id: 'today_work', label: 'Today Work', icon: CalendarCheck },
-    { id: 'preparation_calendar', label: 'Preparation Calendar', icon: Calendar },
-    { id: 'all_days', label: 'Days of Preparation', icon: CalendarDays },
-    { id: 'weekly_assessments', label: 'Weekly Assessments', icon: Award },
+    { id: 'today_work', label: 'Main Plan (180d)', icon: CalendarCheck },
+    { id: 'dsa_track', label: 'DSA in C++ (100d)', icon: Code2 },
+    { id: 'azure_track', label: 'Azure (100d)', icon: Cloud },
+    { id: 'preparation_calendar', label: 'Calendar', icon: Calendar },
+    { id: 'all_days', label: '180 Days List', icon: CalendarDays },
+    { id: 'weekly_assessments', label: 'Assessments', icon: Award },
     { id: 'weekly_progress', label: 'Weekly Progress', icon: TrendingUp },
     { id: 'resource_library', label: 'Resource Library', icon: Library },
-    { id: 'doubt_notebook', label: 'Doubt & Error Notebook', icon: AlertTriangle },
+    { id: 'doubt_notebook', label: 'Doubt Notebook', icon: AlertTriangle },
     { id: 'roadmap_pdf', label: 'Roadmap PDF', icon: FileUp },
     { id: 'original_roadmap', label: 'Original Roadmap', icon: FileText },
     { id: 'study_history', label: 'Study History', icon: History },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    { id: 'settings', label: 'Settings', icon: Settings }
   ];
 
   const formatTime = (secs: number) => {
@@ -65,6 +68,9 @@ export const Navigation: React.FC = () => {
   };
 
   const isOwner = state.role === 'owner';
+
+  const timerTrackLabel =
+    activeTimer.trackId === 'dsa' ? 'DSA' : activeTimer.trackId === 'azure' ? 'AZURE' : 'MAIN';
 
   return (
     <header className="sticky top-0 z-40 bg-[#292929] text-[#F3EFE6] border-b border-[#3D3D3D] shadow-md">
@@ -92,7 +98,16 @@ export const Navigation: React.FC = () => {
         <div className="bg-[#382E25] border-b border-[#E7826D]/40 px-4 py-1.5 text-xs text-[#F3EFE6] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="font-semibold text-[#E7826D]">TEST SIMULATION ACTIVE:</span>
-            <span>Simulating {state.simulationDate ? new Date(state.simulationDate).toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', dateStyle: 'full' }) : 'Preparation Start'} (Day {currentDayNumber})</span>
+            <span>
+              Simulating{' '}
+              {state.simulationDate
+                ? new Date(state.simulationDate).toLocaleDateString('en-US', {
+                    timeZone: 'Asia/Kolkata',
+                    dateStyle: 'full'
+                  })
+                : 'Preparation Start'}{' '}
+              (Day {currentDayNumber})
+            </span>
           </div>
           <button
             onClick={() => setSimulationMode(false)}
@@ -105,7 +120,6 @@ export const Navigation: React.FC = () => {
 
       {/* Main Top Bar */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16 gap-3">
-        {/* Brand Zone */}
         <div className="flex items-center gap-3 shrink-0">
           <button
             onClick={() => setCurrentPage(isPreparationLocked ? 'lock_screen' : 'home_dashboard')}
@@ -119,15 +133,13 @@ export const Navigation: React.FC = () => {
                 STEEVEN'S 180-DAY PREPARATION TRACKER
               </span>
               <span className="text-[10px] text-[#A8A49C] hidden sm:block">
-                End-to-End Production RAG · Asia/Kolkata
+                Main (180d) · DSA in C++ (100d) · Azure (100d) · Asia/Kolkata
               </span>
             </div>
           </button>
         </div>
 
-        {/* Right Zone: Save Status, Timer, Account Badge, Logout */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {/* Unobtrusive Auto-Save Status Indicator */}
           <div className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded text-[11px] font-mono text-[#A8A49C]">
             {saveStatus === 'saving' && (
               <span className="flex items-center gap-1 text-[#E7826D]">
@@ -141,25 +153,29 @@ export const Navigation: React.FC = () => {
                 <span>Saved</span>
               </span>
             )}
-            {saveStatus === 'error' && (
-              <span className="text-[#F87171]">Save local</span>
-            )}
+            {saveStatus === 'error' && <span className="text-[#F87171]">Save local</span>}
           </div>
 
-          {/* Active Timer Badge */}
           {activeTimer.isActive && (
             <div className="flex items-center gap-2 px-2.5 py-1 bg-[#1F1F1F] border border-[#525252] rounded-lg">
               <Timer className="w-3.5 h-3.5 text-[#E7826D] animate-pulse" />
+              <span className="text-[10px] font-bold text-[#E7826D]">{timerTrackLabel}</span>
               <span className="font-mono text-xs font-semibold text-[#F3EFE6] tabular-nums">
                 {formatTime(activeTimer.remainingSeconds)}
               </span>
               <div className="flex items-center gap-0.5 ml-1">
                 {activeTimer.isPaused ? (
-                  <button onClick={resumeTimer} className="p-1 hover:text-[#E7826D] text-[#C2BEB5] cursor-pointer">
+                  <button
+                    onClick={resumeTimer}
+                    className="p-1 hover:text-[#E7826D] text-[#C2BEB5] cursor-pointer"
+                  >
                     <Play className="w-3 h-3" />
                   </button>
                 ) : (
-                  <button onClick={pauseTimer} className="p-1 hover:text-[#E7826D] text-[#C2BEB5] cursor-pointer">
+                  <button
+                    onClick={pauseTimer}
+                    className="p-1 hover:text-[#E7826D] text-[#C2BEB5] cursor-pointer"
+                  >
                     <Pause className="w-3 h-3" />
                   </button>
                 )}
@@ -167,7 +183,6 @@ export const Navigation: React.FC = () => {
             </div>
           )}
 
-          {/* Account Indicator */}
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1F1F1F] border border-[#3D3D3D] text-xs">
             {isOwner ? (
               <span className="font-semibold text-[#F3EFE6] whitespace-nowrap">Steeven — Owner</span>
@@ -176,7 +191,6 @@ export const Navigation: React.FC = () => {
             )}
           </div>
 
-          {/* Logout */}
           <button
             onClick={logout}
             className="p-2 text-[#C2BEB5] hover:text-[#F3EFE6] hover:bg-[#3D3D3D] rounded-lg transition-colors cursor-pointer"
@@ -185,7 +199,6 @@ export const Navigation: React.FC = () => {
             <LogOut className="w-4 h-4" />
           </button>
 
-          {/* Mobile Menu Toggle */}
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="xl:hidden p-2 text-[#C2BEB5] hover:text-[#F3EFE6] hover:bg-[#3D3D3D] rounded-lg cursor-pointer"
@@ -200,14 +213,16 @@ export const Navigation: React.FC = () => {
         <div className="max-w-7xl mx-auto w-full flex items-center gap-1">
           {navItems.map(item => {
             const isActive = currentPage === item.id;
-            const isTodayWorkBlocked = isOwner && isPreparationLocked && item.id === 'today_work';
-            const isAssessmentsBlocked = isOwner && isPreparationLocked && item.id === 'weekly_assessments';
+            const isBlocked =
+              isOwner &&
+              isPreparationLocked &&
+              (item.id === 'today_work' || item.id === 'weekly_assessments');
 
             return (
               <button
                 key={item.id}
                 onClick={() => {
-                  if (isOwner && isPreparationLocked && (item.id === 'today_work' || item.id === 'weekly_assessments')) {
+                  if (isBlocked) {
                     setCurrentPage('lock_screen');
                   } else {
                     setCurrentPage(item.id);
@@ -217,7 +232,7 @@ export const Navigation: React.FC = () => {
                   isActive
                     ? 'bg-[#E7826D] text-[#292929] font-bold shadow-sm'
                     : 'text-[#E0DCD3] hover:text-[#F3EFE6] hover:bg-[#2F2F2F]'
-                } ${isTodayWorkBlocked || isAssessmentsBlocked ? 'opacity-40' : ''}`}
+                } ${isBlocked ? 'opacity-40' : ''}`}
               >
                 <item.icon className="w-3.5 h-3.5 shrink-0" />
                 <span>{item.label}</span>
@@ -234,7 +249,11 @@ export const Navigation: React.FC = () => {
             <button
               key={item.id}
               onClick={() => {
-                if (isOwner && isPreparationLocked && (item.id === 'today_work' || item.id === 'weekly_assessments')) {
+                if (
+                  isOwner &&
+                  isPreparationLocked &&
+                  (item.id === 'today_work' || item.id === 'weekly_assessments')
+                ) {
                   setCurrentPage('lock_screen');
                 } else {
                   setCurrentPage(item.id);

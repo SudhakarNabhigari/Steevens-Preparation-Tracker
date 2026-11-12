@@ -1,5 +1,6 @@
 export type DayStatus = 'locked' | 'not-started' | 'in-progress' | 'completed' | 'incomplete';
 export type UserRole = 'owner' | 'guest';
+export type TrackId = 'main' | 'dsa' | 'azure';
 
 export interface Subtask {
   id: string;
@@ -27,6 +28,52 @@ export interface DaySchedule {
   revisionTasks: string[];
   pdfPage: number;
   pdfSection: string;
+}
+
+export interface TrackChecklistItem {
+  id: string;
+  title: string;
+  description: string;
+  category: 'objective' | 'work' | 'milestone' | 'scope';
+}
+
+export interface TrackDaySchedule {
+  trackId: 'dsa' | 'azure';
+  dayNumber: number; // 1 to 100
+  dateString: string; // e.g. "16 Nov 2026"
+  isoDate: string; // "2026-11-16"
+  dayOfWeek: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
+  weekNumber: number; // 1 to 15
+  targetMinutes: number; // DSA: 90 Mon-Fri, 120 Sat-Sun | Azure: 60 all days
+  scheduleLabel: string; // e.g. "90 minutes preparation" / "2 hours revision" / "1 hour preparation"
+  phaseTitle: string;
+  topic: string;
+  classFocus: string;
+  objective: string;
+  studentWork: string;
+  milestoneOutput: string;
+  dailyScope: string;
+  isWeekendRevision: boolean;
+  pdfPage: number;
+  checklist: TrackChecklistItem[];
+}
+
+export interface TrackRevisionRecord {
+  weekNumber: number;
+  score?: number;
+  maxScore?: number;
+  notes: string;
+  passed: boolean;
+  completedAt: string;
+}
+
+export interface TrackProgressState {
+  completedTasks: Record<string, boolean>; // key: `${dayNumber}_${taskId}`
+  completedDays: Record<number, boolean>;
+  dayNotes: Record<number, string>;
+  studyTimeSeconds: Record<number, number>;
+  revisionRecords: Record<number, TrackRevisionRecord>;
+  lastActiveDayNumber: number;
 }
 
 export interface Question {
@@ -67,6 +114,7 @@ export interface AssessmentSubmission {
 
 export interface StudySessionLog {
   id: string;
+  trackId?: TrackId;
   dayNumber: number;
   date: string;
   startTime: string;
@@ -80,6 +128,7 @@ export interface StudySessionLog {
 export interface TimerState {
   isActive: boolean;
   isPaused: boolean;
+  trackId?: TrackId;
   dayNumber: number;
   targetSeconds: number;
   elapsedSeconds: number;
@@ -113,18 +162,21 @@ export interface UserState {
   passwordHash: string; // Stored securely
   role: UserRole; // 'owner' (Steeven) or 'guest' (Guest)
   isAuthenticated: boolean;
-  completedTasks: Record<string, boolean>; // key: `${dayNumber}_${taskId}` -> boolean
-  completedDays: Record<number, boolean>; // dayNumber -> true if all tasks done
-  dayNotes: Record<number, string>; // dayNumber -> personal study notes
-  studyTimeSeconds: Record<number, number>; // dayNumber -> seconds studied
-  assessmentSubmissions: Record<number, AssessmentSubmission>; // weekNumber -> submission
+  completedTasks: Record<string, boolean>; // key: `${dayNumber}_${taskId}` -> boolean (Main 180-day plan)
+  completedDays: Record<number, boolean>; // dayNumber -> true if all tasks done (Main 180-day plan)
+  dayNotes: Record<number, string>; // dayNumber -> personal study notes (Main 180-day plan)
+  studyTimeSeconds: Record<number, number>; // dayNumber -> seconds studied (Main 180-day plan)
+  assessmentSubmissions: Record<number, AssessmentSubmission>; // weekNumber -> submission (Main 180-day plan)
   studyLogs: StudySessionLog[];
   timerState: TimerState;
+  trackTimerSnapshots?: Partial<Record<TrackId, TimerState>>;
+  dsaProgress: TrackProgressState;
+  azureProgress: TrackProgressState;
   simulationDate: string | null; // e.g. "2026-11-16T10:00:00.000Z" when testing fast-forward
   simulationEnabled: boolean;
   uploadedPdfs: RoadmapPdfRecord[];
   activePdfId: string;
-  lastActiveDayNumber: number; // The day where user stopped, for resume
+  lastActiveDayNumber: number; // The day where user stopped in Main plan, for resume
   lastSavedTimestamp?: string;
   resources: ResourceItem[];
   doubtEntries: DoubtEntry[];

@@ -398,14 +398,14 @@ export const TodayWorkPage: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            {activeTimer.isActive && activeTimer.dayNumber === day.dayNumber ? (
+            {activeTimer.isActive && (!activeTimer.trackId || activeTimer.trackId === 'main') && activeTimer.dayNumber === day.dayNumber ? (
               <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white text-xs font-semibold">
                 <span className="w-2 h-2 rounded-full bg-[#E7826D] animate-pulse" />
                 <span>Timer Running in Header</span>
               </div>
             ) : (
               <button
-                onClick={() => startTimer(day.dayNumber, day.targetHours * 60, 'daily')}
+                onClick={() => startTimer(day.dayNumber, day.targetHours * 60, 'daily', 'main')}
                 className="w-full sm:w-auto px-6 py-3 bg-[#E7826D] hover:bg-[#D66F5A] active:bg-[#C85D48] text-white rounded-xl text-sm font-bold shadow-md shadow-[#E7826D]/30 flex items-center justify-center gap-2 cursor-pointer transition-all uppercase tracking-wider"
               >
                 <Play className="w-4 h-4 fill-white" />
