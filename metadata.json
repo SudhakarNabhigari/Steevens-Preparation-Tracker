@@ -1,0 +1,6 @@
+{
+  "name": "STEEVEN'S 180-DAY PREPARATION TRACKER",
+  "description": "Production-grade 180-day personal learning tracker, smart study timers, weekly Saturday assessments, and complete syllabus roadmap for End-to-End Production RAG.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
