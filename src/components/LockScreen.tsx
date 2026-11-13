@@ -122,40 +122,34 @@ export const LockScreen: React.FC = () => {
           </button>
         </div>
 
-        {/* Developer / Evaluation Fast-Forward Simulation Mode */}
+        {/* Explore Roadmap & Schedule Safely While Daily Tasks Remain Locked */}
         <div className="mt-8 p-5 rounded-2xl bg-white border border-[#E0DCD3] text-left max-w-xl mx-auto shadow-sm">
           <div className="flex items-start gap-3">
             <Sparkles className="w-5 h-5 text-[#E7826D] shrink-0 mt-0.5" />
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-[#292929] uppercase tracking-wider">
-                  Evaluation & Fast-Forward Mode
+                  Schedule & Structure Exploration
                 </span>
                 <span className="text-[11px] text-[#E7826D] bg-[#FAF8F5] border border-[#E0DCD3] px-2 py-0.5 rounded font-mono font-bold">
-                  Test Feature
+                  Always Accessible
                 </span>
               </div>
               <p className="text-xs text-[#78716C] leading-relaxed">
-                The application strictly enforces the real 16 November 2026 IST lock date. To verify the Today Work page, 4-hour countdown timers, interactive checkboxes, and Saturday assessments right now before the launch date, you can enable fast-forward preview mode.
+                You can freely explore the dashboard, preparation calendar, track overviews, resources, and weekly schedules now. Actual study tasks, checkboxes, notes, timers, and weekly assessments unlock strictly at 00:00 IST on their scheduled dates.
               </p>
               <div className="pt-2 flex flex-wrap gap-2">
                 <button
-                  onClick={() => {
-                    setSimulationMode(true, '2026-11-16T09:00:00+05:30');
-                    setCurrentPage('home_dashboard');
-                  }}
+                  onClick={() => setCurrentPage('home_dashboard')}
                   className="px-3.5 py-2 rounded-xl bg-[#E7826D] hover:bg-[#D66F5A] text-white text-xs font-bold cursor-pointer shadow-sm transition-colors uppercase tracking-wider"
                 >
-                  Simulate Day 1 Launch (16 Nov 2026)
+                  Open Home Dashboard
                 </button>
                 <button
-                  onClick={() => {
-                    setSimulationMode(true, '2026-11-21T09:00:00+05:30');
-                    setCurrentPage('weekly_assessments');
-                  }}
+                  onClick={() => setCurrentPage('weekly_assessments')}
                   className="px-3.5 py-2 rounded-xl bg-[#292929] hover:bg-[#404040] text-white text-xs font-bold cursor-pointer shadow-sm transition-colors uppercase tracking-wider"
                 >
-                  Simulate Week 1 Saturday Assessment
+                  View 26-Week Assessment Schedule
                 </button>
               </div>
             </div>

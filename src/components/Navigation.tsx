@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useApp, NavigationPage } from '../context/AppContext';
 import {
   LayoutDashboard,
@@ -30,14 +30,14 @@ export const Navigation: React.FC = () => {
     state,
     currentPage,
     setCurrentPage,
-    isPreparationLocked,
-    currentDayNumber,
     activeTimer,
     pauseTimer,
     resumeTimer,
     logout,
     resetGuestPreview,
     saveStatus,
+    testModeEnabled,
+    testModeDate,
     setSimulationMode
   } = useApp();
 
@@ -80,7 +80,7 @@ export const Navigation: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#E7826D] animate-pulse" />
             <span className="font-semibold text-[#F3EFE6]">
-              GUEST PREVIEW MODE - Changes are temporary and will not affect Steeven's preparation.
+              GUEST PREVIEW / TEMPORARY STUDY MODE — Shared PDFs, resources & settings are read-only; your study progress stays local and never affects Steeven.
             </span>
           </div>
           <button
@@ -93,27 +93,29 @@ export const Navigation: React.FC = () => {
         </div>
       )}
 
-      {/* Owner Fast-Forward Simulation Banner if active */}
-      {isOwner && state.simulationEnabled && (
-        <div className="bg-[#382E25] border-b border-[#E7826D]/40 px-4 py-1.5 text-xs text-[#F3EFE6] flex items-center justify-between">
+      {/* Ephemeral TEST MODE Banner (Read-Only Schedule Preview — never alters real locks or progress) */}
+      {isOwner && testModeEnabled && (
+        <div className="bg-[#382E25] border-b border-[#E7826D]/40 px-4 py-1.5 text-xs text-[#F3EFE6] flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-[#E7826D]">TEST SIMULATION ACTIVE:</span>
+            <span className="px-1.5 py-0.5 rounded bg-[#E7826D] text-[#292929] font-extrabold text-[10px] tracking-wider uppercase">
+              TEST MODE
+            </span>
             <span>
-              Simulating{' '}
-              {state.simulationDate
-                ? new Date(state.simulationDate).toLocaleDateString('en-US', {
+              Schedule Preview Date:{' '}
+              {testModeDate
+                ? new Date(testModeDate).toLocaleDateString('en-US', {
                     timeZone: 'Asia/Kolkata',
                     dateStyle: 'full'
                   })
-                : 'Preparation Start'}{' '}
-              (Day {currentDayNumber})
+                : '16 November 2026'}{' '}
+              · Production IST locks & saved progress remain protected.
             </span>
           </div>
           <button
             onClick={() => setSimulationMode(false)}
-            className="hover:underline text-[#E7826D] font-medium ml-4 cursor-pointer"
+            className="hover:underline text-[#E7826D] font-semibold ml-4 cursor-pointer shrink-0"
           >
-            Switch to Real Clock (Locked)
+            Exit Test Mode
           </button>
         </div>
       )}
@@ -122,7 +124,7 @@ export const Navigation: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-16 gap-3">
         <div className="flex items-center gap-3 shrink-0">
           <button
-            onClick={() => setCurrentPage(isPreparationLocked ? 'lock_screen' : 'home_dashboard')}
+            onClick={() => setCurrentPage('home_dashboard')}
             className="flex items-center gap-2.5 text-left group cursor-pointer focus:outline-none"
           >
             <div className="w-8 h-8 rounded-lg bg-[#E7826D] text-[#292929] flex items-center justify-center font-bold text-xs shadow-sm font-mono">
@@ -130,10 +132,11 @@ export const Navigation: React.FC = () => {
             </div>
             <div>
               <span className="text-xs sm:text-sm font-bold tracking-tight text-[#F3EFE6] whitespace-nowrap block">
-                STEEVEN'S 180-DAY PREPARATION TRACKER
+                {state.sharedSettings?.preparationTitle || "STEEVEN'S 180-DAY PREPARATION TRACKER"}
               </span>
               <span className="text-[10px] text-[#A8A49C] hidden sm:block">
-                Main (180d) | DSA in C++ (100d) | Azure (100d) | Asia/Kolkata
+                {state.sharedSettings?.studyScheduleBannerNote ||
+                  'Main (180d) · DSA in C++ (100d) · Azure (100d) · Asia/Kolkata'}
               </span>
             </div>
           </button>
@@ -185,15 +188,14 @@ export const Navigation: React.FC = () => {
 
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#1F1F1F] border border-[#3D3D3D] text-xs">
             {isOwner ? (
-              <span className="font-semibold text-[#F3EFE6] whitespace-nowrap">Steeven - Owner</span>
+              <span className="font-semibold text-[#F3EFE6] whitespace-nowrap">Steeven — Owner</span>
             ) : (
-              <span className="font-semibold text-[#E7826D] whitespace-nowrap">Guest - Preview</span>
+              <span className="font-semibold text-[#E7826D] whitespace-nowrap">Guest — Preview</span>
             )}
           </div>
 
           <button
-            type="button"
-            onClick={() => logout()}
+            onClick={logout}
             className="p-2 text-[#C2BEB5] hover:text-[#F3EFE6] hover:bg-[#3D3D3D] rounded-lg transition-colors cursor-pointer"
             title="Log Out"
           >
@@ -214,26 +216,16 @@ export const Navigation: React.FC = () => {
         <div className="max-w-7xl mx-auto w-full flex items-center gap-1">
           {navItems.map(item => {
             const isActive = currentPage === item.id;
-            const isBlocked =
-              isOwner &&
-              isPreparationLocked &&
-              (item.id === 'today_work' || item.id === 'weekly_assessments');
 
             return (
               <button
                 key={item.id}
-                onClick={() => {
-                  if (isBlocked) {
-                    setCurrentPage('lock_screen');
-                  } else {
-                    setCurrentPage(item.id);
-                  }
-                }}
+                onClick={() => setCurrentPage(item.id)}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-colors whitespace-nowrap cursor-pointer text-xs ${
                   isActive
                     ? 'bg-[#E7826D] text-[#292929] font-bold shadow-sm'
                     : 'text-[#E0DCD3] hover:text-[#F3EFE6] hover:bg-[#2F2F2F]'
-                } ${isBlocked ? 'opacity-40' : ''}`}
+                }`}
               >
                 <item.icon className="w-3.5 h-3.5 shrink-0" />
                 <span>{item.label}</span>
@@ -250,18 +242,10 @@ export const Navigation: React.FC = () => {
             <button
               key={item.id}
               onClick={() => {
-                if (
-                  isOwner &&
-                  isPreparationLocked &&
-                  (item.id === 'today_work' || item.id === 'weekly_assessments')
-                ) {
-                  setCurrentPage('lock_screen');
-                } else {
-                  setCurrentPage(item.id);
-                }
+                setCurrentPage(item.id);
                 setMobileMenuOpen(false);
               }}
-              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-left ${
+              className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-left cursor-pointer ${
                 currentPage === item.id
                   ? 'bg-[#E7826D] text-[#292929] font-bold'
                   : 'text-[#E0DCD3] hover:bg-[#292929]'
@@ -276,7 +260,3 @@ export const Navigation: React.FC = () => {
     </header>
   );
 };
-
-
-
-

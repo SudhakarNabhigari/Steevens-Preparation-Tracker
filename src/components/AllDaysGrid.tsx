@@ -9,6 +9,7 @@ import {
 export const AllDaysGrid: React.FC = () => {
   const {
     currentDayNumber,
+    isDayUnlocked,
     getDayStatus,
     getDayTaskCompletion,
     setSelectedDayNumber,
@@ -22,15 +23,17 @@ export const AllDaysGrid: React.FC = () => {
   const filteredDays = useMemo(() => {
     return ALL_180_DAYS.filter(day => {
       const status = getDayStatus(day.dayNumber);
+      const unlocked = isDayUnlocked(day.dayNumber);
 
       // Search match
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         const matchesTopic = day.topic.toLowerCase().includes(query);
-        const matchesSub = day.subtopics.some(s => s.toLowerCase().includes(query));
-        const matchesOutput = day.output.toLowerCase().includes(query);
         const matchesMod = day.moduleTitle.toLowerCase().includes(query);
-        if (!matchesTopic && !matchesSub && !matchesOutput && !matchesMod) return false;
+        const matchesDay = `day ${day.dayNumber}`.includes(query);
+        const matchesSub = unlocked && day.subtopics.some(s => s.toLowerCase().includes(query));
+        const matchesOutput = unlocked && day.output.toLowerCase().includes(query);
+        if (!matchesTopic && !matchesSub && !matchesOutput && !matchesMod && !matchesDay) return false;
       }
 
       // Module filter
@@ -184,9 +187,11 @@ export const AllDaysGrid: React.FC = () => {
                   {day.topic}
                 </h3>
 
-                {/* Subtopics snippet */}
+                {/* Subtopics snippet (unlocked) or safe module/unlock info (locked) */}
                 <p className="text-xs text-[#78716C] line-clamp-2 leading-relaxed">
-                  {day.subtopics.join(' · ')}
+                  {status === 'locked'
+                    ? `Module ${day.moduleNumber}: ${day.moduleTitle} · Unlocks ${day.dateString} · 00:00 IST`
+                    : day.subtopics.join(' · ')}
                 </p>
               </div>
 

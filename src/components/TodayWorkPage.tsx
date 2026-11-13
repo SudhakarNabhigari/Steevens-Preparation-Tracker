@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { ALL_180_DAYS } from '../data/syllabus';
+import { getDayLockStatus, MAIN_TRACK_MAX_DAYS } from '../utils/dailyLock';
 import {
   Clock,
   CheckCircle2,
@@ -13,16 +14,20 @@ import {
   ChevronLeft,
   ChevronRight,
   Save,
-  FileText
+  FileText,
+  Lock,
+  ShieldCheck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 export const TodayWorkPage: React.FC = () => {
   const {
     state,
+    nowTimestamp,
     currentDayNumber,
     selectedDayNumber,
     setSelectedDayNumber,
+    isDayUnlocked,
     getDayStatus,
     getDayTaskCompletion,
     toggleTaskCompletion,
@@ -33,6 +38,8 @@ export const TodayWorkPage: React.FC = () => {
   } = useApp();
 
   const day = ALL_180_DAYS[selectedDayNumber - 1] || ALL_180_DAYS[0];
+  const isUnlocked = isDayUnlocked(day.dayNumber);
+  const lockStatus = getDayLockStatus(day.dayNumber, nowTimestamp, MAIN_TRACK_MAX_DAYS);
   const { completed, total, percentage } = getDayTaskCompletion(day.dayNumber);
   const status = getDayStatus(day.dayNumber);
 
@@ -45,6 +52,7 @@ export const TodayWorkPage: React.FC = () => {
   }, [day.dayNumber, state.dayNotes]);
 
   const handleToggle = (taskId: string) => {
+    if (!isUnlocked) return;
     toggleTaskCompletion(day.dayNumber, taskId);
 
     // If this completes the last task, trigger celebratory confetti!
@@ -62,6 +70,7 @@ export const TodayWorkPage: React.FC = () => {
   };
 
   const handleSaveNotes = () => {
+    if (!isUnlocked) return;
     saveDayNotes(day.dayNumber, notesInput);
     setNotesSavedAlert(true);
     setTimeout(() => setNotesSavedAlert(false), 2000);
@@ -168,9 +177,16 @@ export const TodayWorkPage: React.FC = () => {
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-mono text-sm font-bold text-[#292929] tabular-nums">
-                {completed} / {total} tasks ({percentage}%)
-              </span>
+              {isUnlocked ? (
+                <span className="font-mono text-sm font-bold text-[#292929] tabular-nums">
+                  {completed} / {total} tasks ({percentage}%)
+                </span>
+              ) : (
+                <span className="font-mono text-xs font-semibold text-[#78716C] flex items-center gap-1">
+                  <Lock className="w-3.5 h-3.5 text-[#E7826D]" />
+                  <span>Unlocks {lockStatus.unlockLabelIst}</span>
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -179,19 +195,96 @@ export const TodayWorkPage: React.FC = () => {
         <div className="w-full h-2.5 bg-[#FAF8F5] rounded-full overflow-hidden border border-[#E0DCD3]">
           <div
             className={`h-full transition-all duration-300 ${
-              percentage === 100
+              isUnlocked && percentage === 100
                 ? 'bg-[#16A34A]'
-                : percentage > 0
+                : isUnlocked && percentage > 0
                 ? 'bg-[#E7826D]'
                 : 'bg-transparent'
             }`}
-            style={{ width: `${percentage}%` }}
+            style={{ width: `${isUnlocked ? percentage : 0}%` }}
           />
         </div>
       </div>
 
-      {/* Main Learning Sections with Interactive Checkboxes */}
-      <div className="space-y-4">
+      {/* Strict IST Daily Lock Panel (when !isUnlocked — hides tasks, checklist, notes & timer) */}
+      {!isUnlocked ? (
+        <div className="bg-white border border-[#E0DCD3] rounded-2xl p-6 sm:p-8 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-[#E0DCD3] pb-4">
+            <div className="flex items-start gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-[#292929] text-[#E7826D] flex items-center justify-center shrink-0">
+                <Lock className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-[#292929]">
+                  Day {day.dayNumber} Daily Tasks Locked
+                </h3>
+                <p className="text-xs text-[#78716C] mt-0.5">
+                  Scheduled Unlock: <strong className="text-[#292929] font-mono">{lockStatus.unlockLabelIst}</strong> (Asia/Kolkata)
+                </p>
+              </div>
+            </div>
+
+            <span className="px-3 py-1 rounded-full bg-stone-100 text-stone-700 border border-stone-200 text-xs font-bold uppercase tracking-wider shrink-0 self-start">
+              Locked Until {lockStatus.unlockDateLabelIst}
+            </span>
+          </div>
+
+          <div className="p-4 sm:p-5 rounded-2xl bg-[#FAF8F5] border border-[#E0DCD3] space-y-4">
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-[#E7826D] shrink-0 mt-0.5" />
+              <p className="text-xs text-[#5A5650] leading-relaxed">
+                You can browse the 180-day roadmap structure, modules, topics, and schedule dates at any time. Detailed subtopic checklists, practical implementation tasks, deliverables, personal notes, and completion timers for Day {day.dayNumber} remain hidden until{' '}
+                <strong className="text-[#292929] font-mono">{lockStatus.unlockLabelIst}</strong> and unlock automatically on schedule.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-4 gap-3 max-w-md mx-auto pt-1">
+              <div className="bg-white border border-[#E0DCD3] rounded-xl p-3 text-center">
+                <span className="text-2xl font-extrabold font-mono text-[#292929] tabular-nums block">
+                  {String(lockStatus.days).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase tracking-wider text-[#78716C] font-semibold">Days</span>
+              </div>
+              <div className="bg-white border border-[#E0DCD3] rounded-xl p-3 text-center">
+                <span className="text-2xl font-extrabold font-mono text-[#292929] tabular-nums block">
+                  {String(lockStatus.hours).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase tracking-wider text-[#78716C] font-semibold">Hours</span>
+              </div>
+              <div className="bg-white border border-[#E0DCD3] rounded-xl p-3 text-center">
+                <span className="text-2xl font-extrabold font-mono text-[#292929] tabular-nums block">
+                  {String(lockStatus.minutes).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase tracking-wider text-[#78716C] font-semibold">Minutes</span>
+              </div>
+              <div className="bg-white border border-[#E0DCD3] rounded-xl p-3 text-center">
+                <span className="text-2xl font-extrabold font-mono text-[#E7826D] tabular-nums block">
+                  {String(lockStatus.seconds).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase tracking-wider text-[#78716C] font-semibold">Seconds</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-[#292929] text-[#F3EFE6] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="text-xs">
+              <span className="font-bold text-[#E7826D] uppercase tracking-wider block">
+                Study Timer Locked · {day.targetHours} Hours Scheduled
+              </span>
+              <span className="text-[#C2BEB5]">
+                Timer and completion controls activate automatically at {lockStatus.unlockLabelIst}.
+              </span>
+            </div>
+            <span className="px-3.5 py-2 rounded-xl bg-white/10 border border-white/15 text-xs font-mono font-bold text-[#E0DCD3] flex items-center gap-1.5 shrink-0 self-start sm:self-auto">
+              <Lock className="w-3.5 h-3.5 text-[#E7826D]" />
+              <span>LOCKED</span>
+            </span>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Main Learning Sections with Interactive Checkboxes */}
+          <div className="space-y-4">
         {/* Section 1: Concept Mastery */}
         <div className="bg-white border border-[#E0DCD3] rounded-2xl p-5 shadow-sm space-y-3">
           <div className="flex items-center gap-2 text-sm font-bold text-[#292929] uppercase tracking-wider border-b border-[#E0DCD3] pb-2">
@@ -415,6 +508,8 @@ export const TodayWorkPage: React.FC = () => {
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

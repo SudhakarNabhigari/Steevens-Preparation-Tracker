@@ -4,6 +4,7 @@ import { ALL_180_DAYS } from '../data/syllabus';
 import { DSA_100_DAYS } from '../data/dsaSyllabus';
 import { AZURE_100_DAYS } from '../data/azureSyllabus';
 import { DaySchedule, TrackDaySchedule, TrackId } from '../types';
+import { getDayLockStatus, MAIN_TRACK_MAX_DAYS, SUB_TRACK_MAX_DAYS } from '../utils/dailyLock';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -13,7 +14,8 @@ import {
   X,
   Layers,
   Code2,
-  Cloud
+  Cloud,
+  Lock
 } from 'lucide-react';
 
 type UnifiedCalendarDay =
@@ -22,8 +24,10 @@ type UnifiedCalendarDay =
 
 export const PreparationCalendarPage: React.FC = () => {
   const {
+    nowTimestamp,
     currentDayNumber,
     currentTrackDayNumber,
+    isTrackDayUnlocked,
     getTrackDayStatus,
     getTrackDayTaskCompletion,
     openDayForTrack,
@@ -338,7 +342,9 @@ export const PreparationCalendarPage: React.FC = () => {
                     : '';
 
                 const subtitleText =
-                  entry?.kind === 'main'
+                  status === 'locked'
+                    ? 'Unlocks 00:00 IST'
+                    : entry?.kind === 'main'
                     ? entry.data.focusType
                     : entry?.kind === 'track'
                     ? entry.data.classFocus
@@ -450,56 +456,118 @@ export const PreparationCalendarPage: React.FC = () => {
               </div>
             </div>
 
-            {selectedDayModal.kind === 'main' ? (
-              <>
-                <div className="space-y-1 text-xs">
-                  <span className="text-[#78716C] font-semibold">Module & Daily Focus:</span>
-                  <p className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]">
-                    <strong className="text-[#E7826D]">Module {selectedDayModal.data.moduleNumber}:</strong>{' '}
-                    {selectedDayModal.data.moduleTitle} · {selectedDayModal.data.focusType}
-                  </p>
-                </div>
+            {(() => {
+              const modalDayUnlocked = isTrackDayUnlocked(
+                selectedTrack,
+                selectedDayModal.data.dayNumber
+              );
+              const modalMaxDay =
+                selectedTrack === 'main' ? MAIN_TRACK_MAX_DAYS : SUB_TRACK_MAX_DAYS;
+              const modalLock = getDayLockStatus(
+                selectedDayModal.data.dayNumber,
+                nowTimestamp,
+                modalMaxDay
+              );
 
-                <div className="space-y-1.5 text-xs">
-                  <span className="text-[#78716C] font-semibold block">
-                    Required Subtopics for Day {selectedDayModal.data.dayNumber}:
-                  </span>
-                  <div className="space-y-1 max-h-40 overflow-y-auto">
-                    {selectedDayModal.data.subtopics.map((sub, i) => {
-                      const isDone = !!state.completedTasks[`${selectedDayModal.data.dayNumber}_subtopic_${i}`];
-                      return (
-                        <div
-                          key={i}
-                          className="flex items-center gap-2 p-2 rounded-lg bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]"
-                        >
-                          <CheckCircle2 className={`w-3.5 h-3.5 ${isDone ? 'text-[#16A34A]' : 'text-stone-300'}`} />
-                          <span className={isDone ? 'line-through text-[#78716C]' : ''}>{sub}</span>
-                        </div>
-                      );
-                    })}
+              if (!modalDayUnlocked) {
+                return (
+                  <div className="space-y-3 text-xs">
+                    <div className="p-3 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]">
+                      {selectedDayModal.kind === 'main' ? (
+                        <>
+                          <strong className="text-[#E7826D]">
+                            Module {selectedDayModal.data.moduleNumber}:
+                          </strong>{' '}
+                          {selectedDayModal.data.moduleTitle} · {selectedDayModal.data.focusType}
+                        </>
+                      ) : (
+                        <>
+                          <strong className="text-[#E7826D]">Schedule: </strong>
+                          {selectedDayModal.data.scheduleLabel} · {selectedDayModal.data.phaseTitle}
+                        </>
+                      )}
+                    </div>
+                    <div className="p-4 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] flex items-start gap-2.5 text-[#5A5650]">
+                      <Lock className="w-4 h-4 text-[#E7826D] shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-[#292929] block mb-0.5">
+                          Daily Tasks Locked Until {modalLock.unlockLabelIst}
+                        </strong>
+                        <span>
+                          Detailed tasks, checklists, instructions, and timer controls unlock automatically at 00:00 IST on {modalLock.unlockDateLabelIst}.
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (selectedDayModal.kind === 'main') {
+                return (
+                  <>
+                    <div className="space-y-1 text-xs">
+                      <span className="text-[#78716C] font-semibold">Module & Daily Focus:</span>
+                      <p className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]">
+                        <strong className="text-[#E7826D]">
+                          Module {selectedDayModal.data.moduleNumber}:
+                        </strong>{' '}
+                        {selectedDayModal.data.moduleTitle} · {selectedDayModal.data.focusType}
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5 text-xs">
+                      <span className="text-[#78716C] font-semibold block">
+                        Required Subtopics for Day {selectedDayModal.data.dayNumber}:
+                      </span>
+                      <div className="space-y-1 max-h-40 overflow-y-auto">
+                        {selectedDayModal.data.subtopics.map((sub, i) => {
+                          const isDone =
+                            !!state.completedTasks[
+                              `${selectedDayModal.data.dayNumber}_subtopic_${i}`
+                            ];
+                          return (
+                            <div
+                              key={i}
+                              className="flex items-center gap-2 p-2 rounded-lg bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]"
+                            >
+                              <CheckCircle2
+                                className={`w-3.5 h-3.5 ${
+                                  isDone ? 'text-[#16A34A]' : 'text-stone-300'
+                                }`}
+                              />
+                              <span className={isDone ? 'line-through text-[#78716C]' : ''}>
+                                {sub}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                );
+              }
+
+              return (
+                <div className="space-y-2 text-xs">
+                  <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]">
+                    <strong className="text-[#E7826D]">Schedule: </strong>
+                    {selectedDayModal.data.scheduleLabel} · {selectedDayModal.data.phaseTitle}
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]">
+                    <strong className="text-[#292929]">Objective: </strong>
+                    {selectedDayModal.data.objective}
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]">
+                    <strong className="text-[#292929]">Student Work: </strong>
+                    {selectedDayModal.data.studentWork}
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]">
+                    <strong className="text-[#E7826D]">Milestone / Output: </strong>
+                    {selectedDayModal.data.milestoneOutput}
                   </div>
                 </div>
-              </>
-            ) : (
-              <div className="space-y-2 text-xs">
-                <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]">
-                  <strong className="text-[#E7826D]">Schedule: </strong>
-                  {selectedDayModal.data.scheduleLabel} · {selectedDayModal.data.phaseTitle}
-                </div>
-                <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]">
-                  <strong className="text-[#292929]">Objective: </strong>
-                  {selectedDayModal.data.objective}
-                </div>
-                <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]">
-                  <strong className="text-[#292929]">Student Work: </strong>
-                  {selectedDayModal.data.studentWork}
-                </div>
-                <div className="p-2.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929]">
-                  <strong className="text-[#E7826D]">Milestone / Output: </strong>
-                  {selectedDayModal.data.milestoneOutput}
-                </div>
-              </div>
-            )}
+              );
+            })()}
 
             <div className="flex items-center justify-between gap-3 pt-3 border-t border-[#E0DCD3]">
               <button

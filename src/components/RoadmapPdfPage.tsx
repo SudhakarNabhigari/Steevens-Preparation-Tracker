@@ -1,7 +1,13 @@
-﻿import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useApp } from '../context/AppContext';
-import { getRoadmapPdfUrl } from '../services/roadmapPdfStorage';
 import { RoadmapPdfRecord } from '../types';
+import { PdfCanvasViewer } from './PdfCanvasViewer';
+import {
+  resolveRoadmapPdfBlob,
+  createTrackedPdfObjectUrl,
+  revokeTrackedPdfObjectUrl,
+  triggerPdfDocumentAction
+} from '../utils/pdfLoader';
 import {
   FileText,
   Upload,
@@ -13,7 +19,8 @@ import {
   AlertTriangle,
   Eye,
   Clock,
-  HardDrive
+  HardDrive,
+  RefreshCw
 } from 'lucide-react';
 
 export const RoadmapPdfPage: React.FC = () => {
@@ -22,36 +29,9 @@ export const RoadmapPdfPage: React.FC = () => {
     uploadRoadmapPdf,
     setActivePdf,
     deletePdf,
+    refreshSharedContent,
     userRole
   } = useApp();
-  const [pdfUrls, setPdfUrls] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadPdfUrls = async () => {
-      const entries = await Promise.all(
-        state.uploadedPdfs.map(async pdf => {
-          try {
-            return [pdf.id, await getRoadmapPdfUrl(pdf)] as const;
-          } catch (error) {
-            console.error(`Could not load PDF ${pdf.filename}:`, error);
-            return [pdf.id, pdf.fileUrl] as const;
-          }
-        })
-      );
-
-      if (!cancelled) {
-        setPdfUrls(Object.fromEntries(entries));
-      }
-    };
-
-    void loadPdfUrls();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [state.uploadedPdfs]);
 
   const isOwner = userRole === 'owner';
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -59,17 +39,110 @@ export const RoadmapPdfPage: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadStatus, setUploadStatus] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  // Selected PDF to preview in embed frame
+  // Selected PDF to preview in viewer
   const activeRecord = state.uploadedPdfs.find(p => p.id === state.activePdfId) || state.uploadedPdfs[0];
   const [previewPdfId, setPreviewPdfId] = useState<string>(activeRecord?.id || '');
 
+  useEffect(() => {
+    const exists = state.uploadedPdfs.some(p => p.id === previewPdfId);
+    if (!exists && activeRecord?.id) {
+      setPreviewPdfId(activeRecord.id);
+    }
+  }, [state.uploadedPdfs, previewPdfId, activeRecord?.id]);
+
   const currentPreviewRecord = state.uploadedPdfs.find(p => p.id === previewPdfId) || activeRecord;
+
+  // Resolved Blob / Object URL state for the currently displayed PDF
+  const [viewerReloadTick, setViewerReloadTick] = useState(0);
+  const [resolvedObjectUrl, setResolvedObjectUrl] = useState<string | null>(null);
+  const [resolvedBytes, setResolvedBytes] = useState<Uint8Array | null>(null);
+  const [isViewerLoading, setIsViewerLoading] = useState(false);
+  const [viewerError, setViewerError] = useState<string | null>(null);
+  const [resolvedPageCount, setResolvedPageCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!currentPreviewRecord) {
+      setResolvedObjectUrl(null);
+      setResolvedBytes(null);
+      setIsViewerLoading(false);
+      setViewerError(null);
+      setResolvedPageCount(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    let createdObjectUrl: string | null = null;
+    let isDisposed = false;
+
+    setIsViewerLoading(true);
+    setViewerError(null);
+    setResolvedBytes(null);
+    setResolvedObjectUrl(null);
+    setResolvedPageCount(null);
+
+    resolveRoadmapPdfBlob(currentPreviewRecord, controller.signal)
+      .then((payload) => {
+        if (isDisposed || controller.signal.aborted) return;
+        createdObjectUrl = createTrackedPdfObjectUrl(payload.blob);
+        setResolvedObjectUrl(createdObjectUrl);
+        setResolvedBytes(payload.bytes);
+        setIsViewerLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (isDisposed || controller.signal.aborted) return;
+        const message = err instanceof Error ? err.message : 'Unable to load the selected PDF document.';
+        setViewerError(message);
+        setIsViewerLoading(false);
+      });
+
+    return () => {
+      isDisposed = true;
+      controller.abort();
+      if (createdObjectUrl) {
+        revokeTrackedPdfObjectUrl(createdObjectUrl);
+      }
+    };
+  }, [
+    currentPreviewRecord?.id,
+    currentPreviewRecord?.fileUrl,
+    currentPreviewRecord?.storagePath,
+    viewerReloadTick
+  ]);
+
+  const handleRetryViewer = useCallback(() => {
+    setViewerReloadTick(t => t + 1);
+  }, []);
+
+  const handleDocumentAction = useCallback(
+    async (pdf: RoadmapPdfRecord, mode: 'open' | 'download') => {
+      try {
+        const cachedUrl = pdf.id === currentPreviewRecord?.id ? resolvedObjectUrl : null;
+        await triggerPdfDocumentAction(pdf, mode, cachedUrl);
+      } catch (err) {
+        setUploadStatus({
+          message:
+            err instanceof Error
+              ? err.message
+              : `Could not ${mode === 'open' ? 'open' : 'download'} ${pdf.filename}.`,
+          type: 'error'
+        });
+      }
+    },
+    [currentPreviewRecord?.id, resolvedObjectUrl]
+  );
 
   // Confirmation modal states for Delete and Replace
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [replaceConfirmRecord, setReplaceConfirmRecord] = useState<RoadmapPdfRecord | null>(null);
   const [verificationPending, setVerificationPending] = useState(false);
+
+  const handleSyncLatest = async () => {
+    setIsSyncing(true);
+    await refreshSharedContent();
+    setTimeout(() => setIsSyncing(false), 300);
+  };
 
   const handleFileProcess = async (file: File) => {
     if (!isOwner) {
@@ -95,7 +168,7 @@ export const RoadmapPdfPage: React.FC = () => {
       setUploadStatus({ message: result.message, type: 'success' });
       setPreviewPdfId(result.pdfId);
       // Ask owner if they want to activate this as the primary roadmap
-      const uploadedRecord = state.uploadedPdfs.find(p => p.id === result.pdfId);
+      const uploadedRecord = result.record || state.uploadedPdfs.find(p => p.id === result.pdfId);
       if (uploadedRecord) {
         setReplaceConfirmRecord(uploadedRecord);
       }
@@ -132,19 +205,12 @@ export const RoadmapPdfPage: React.FC = () => {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     if (!isOwner) return;
-
-    const ok = await deletePdf(id);
-
+    const ok = deletePdf(id);
     if (ok) {
       setDeleteConfirmId(null);
-      setUploadStatus({ message: 'PDF removed from cloud storage.', type: 'info' });
-    } else {
-      setUploadStatus({
-        message: 'PDF could not be deleted. Please try again.',
-        type: 'error',
-      });
+      setUploadStatus({ message: 'PDF removed from storage.', type: 'info' });
     }
   };
 
@@ -200,9 +266,19 @@ export const RoadmapPdfPage: React.FC = () => {
             </button>
           </div>
         ) : (
-          <div className="px-3 py-1.5 rounded-xl bg-white border border-[#E0DCD3] text-[#78716C] text-xs font-semibold flex items-center gap-2 shadow-sm">
-            <Eye className="w-3.5 h-3.5 text-[#E7826D]" />
-            <span>Guest Preview Mode | Read Only</span>
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="px-3 py-1.5 rounded-xl bg-white border border-[#E0DCD3] text-[#78716C] text-xs font-semibold flex items-center gap-2 shadow-sm">
+              <Eye className="w-3.5 h-3.5 text-[#E7826D]" />
+              <span>Guest Preview Mode · Read Only</span>
+            </div>
+            <button
+              onClick={handleSyncLatest}
+              className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929] text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Sync latest Roadmap PDFs from Steeven"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-[#E7826D] ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>Sync</span>
+            </button>
           </div>
         )}
       </div>
@@ -214,7 +290,7 @@ export const RoadmapPdfPage: React.FC = () => {
           <div className="space-y-0.5">
             <span className="font-bold text-[#292929] block">Guest Mode Restricted Permissions</span>
             <p className="leading-relaxed">
-              As a Guest, you can preview and inspect the stored syllabus PDF. PDF upload, replacement, deletion, and schedule modifications are strictly restricted to Steeven (Owner).
+              As a Guest, you can view, preview, and download all roadmap PDFs synced from Steeven. PDF upload, replacement, active roadmap changes, and deletion are strictly restricted to Steeven (Owner).
             </p>
           </div>
         </div>
@@ -297,7 +373,11 @@ export const RoadmapPdfPage: React.FC = () => {
                     : 'bg-white border-[#E0DCD3] hover:border-[#292929]/30'
                 }`}
               >
-                <div className="flex items-start gap-3">
+                <button
+                  type="button"
+                  onClick={() => setPreviewPdfId(pdf.id)}
+                  className="flex items-start gap-3 text-left flex-1 min-w-0 cursor-pointer"
+                >
                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
                     isCurrentlyActive ? 'bg-[#E7826D]/15 text-[#E7826D] border border-[#E7826D]/30' : 'bg-[#FAF8F5] text-[#78716C] border border-[#E0DCD3]'
                   }`}>
@@ -321,19 +401,19 @@ export const RoadmapPdfPage: React.FC = () => {
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#78716C]">
                       <span>Size: <strong className="font-mono text-[#292929]">{pdf.fileSizeBytesFormatted}</strong></span>
-                      <span>|</span>
+                      <span>·</span>
                       <span>Uploaded: <strong className="text-[#292929]">{new Date(pdf.uploadTimestamp).toLocaleDateString('en-US', { dateStyle: 'medium' })}</strong></span>
-                      <span>|</span>
+                      <span>·</span>
                       <span>Version: <strong className="font-mono text-[#292929]">v{pdf.version}</strong></span>
                       {pdf.extractedSummary && (
                         <>
-                          <span>|</span>
+                          <span>·</span>
                           <span className="text-[#16A34A] font-mono font-bold">{pdf.extractedSummary.coveragePct}% Content Coverage</span>
                         </>
                       )}
                     </div>
                   </div>
-                </div>
+                </button>
 
                 {/* Document Actions */}
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
@@ -351,24 +431,23 @@ export const RoadmapPdfPage: React.FC = () => {
                   </button>
 
                   {/* Open / Download */}
-                  <a
-                    href={pdfUrls[pdf.id] || pdf.fileUrl}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => handleDocumentAction(pdf, 'open')}
                     className="p-1.5 rounded-lg bg-white hover:bg-[#FAF8F5] text-[#292929] border border-[#E0DCD3] text-xs font-medium flex items-center gap-1 cursor-pointer"
                     title="Open PDF in new browser tab"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
+                  </button>
 
-                  <a
-                    href={pdfUrls[pdf.id] || pdf.fileUrl}
-                    download={pdf.filename}
+                  <button
+                    type="button"
+                    onClick={() => handleDocumentAction(pdf, 'download')}
                     className="p-1.5 rounded-lg bg-white hover:bg-[#FAF8F5] text-[#292929] border border-[#E0DCD3] text-xs font-medium flex items-center gap-1 cursor-pointer"
                     title="Download original PDF file"
                   >
                     <Download className="w-3.5 h-3.5" />
-                  </a>
+                  </button>
 
                   {/* Owner Replace & Delete */}
                   {isOwner && !isCurrentlyActive && (
@@ -400,38 +479,51 @@ export const RoadmapPdfPage: React.FC = () => {
       {currentPreviewRecord && (
         <div className="bg-white border border-[#E0DCD3] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E0DCD3] pb-3">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Eye className="w-4 h-4 text-[#E7826D]" />
               <h2 className="text-sm font-bold text-[#292929] uppercase tracking-wider">
                 Document Viewer: {currentPreviewRecord.filename}
               </h2>
+              {currentPreviewRecord.id === state.activePdfId && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#E7826D]/15 text-[#E7826D] border border-[#E7826D]/30 uppercase">
+                  Active Roadmap
+                </span>
+              )}
+              {resolvedPageCount !== null && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-[#FAF8F5] text-[#78716C] border border-[#E0DCD3]">
+                  {resolvedPageCount} pages · {currentPreviewRecord.fileSizeBytesFormatted}
+                </span>
+              )}
             </div>
-            <div className="flex items-center gap-2">
-              <a
-                href={pdfUrls[currentPreviewRecord.id] || currentPreviewRecord.fileUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="px-3 py-1 bg-[#FAF8F5] hover:bg-[#F3EFE6] text-[#292929] text-xs rounded-lg flex items-center gap-1.5 border border-[#E0DCD3] font-semibold"
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleDocumentAction(currentPreviewRecord, 'open')}
+                disabled={isViewerLoading || (!resolvedObjectUrl && !currentPreviewRecord.fileUrl)}
+                className="px-3 py-1 bg-[#FAF8F5] hover:bg-[#F3EFE6] text-[#292929] text-xs rounded-lg flex items-center gap-1.5 border border-[#E0DCD3] font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <span>Fullscreen View</span>
                 <ExternalLink className="w-3 h-3" />
-              </a>
+              </button>
             </div>
           </div>
 
-          {/* Embedded Viewer Element */}
-          <div className="w-full h-[650px] bg-[#FAF8F5] rounded-xl overflow-hidden border border-[#E0DCD3] relative">
-            <iframe
-              src={pdfUrls[currentPreviewRecord.id] || currentPreviewRecord.fileUrl}
-              title={currentPreviewRecord.filename}
-              className="w-full h-full border-none"
-            />
-          </div>
+          <PdfCanvasViewer
+            pdfRecord={currentPreviewRecord}
+            pdfBytes={resolvedBytes}
+            objectUrl={resolvedObjectUrl}
+            isLoadingSource={isViewerLoading}
+            sourceError={viewerError}
+            onRetry={handleRetryViewer}
+            onOpenExternal={() => handleDocumentAction(currentPreviewRecord, 'open')}
+            onDownload={() => handleDocumentAction(currentPreviewRecord, 'download')}
+            onPageCountResolved={setResolvedPageCount}
+          />
         </div>
       )}
 
-      {/* Confirmation Modal: Replace Active Roadmap */}
-      {replaceConfirmRecord && (
+      {/* Confirmation Modal: Replace Active Roadmap (Owner Only) */}
+      {isOwner && replaceConfirmRecord && (
         <div className="fixed inset-0 z-50 bg-[#292929]/70 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white border border-[#E0DCD3] rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
             <div className="flex items-start gap-3">
@@ -484,8 +576,8 @@ export const RoadmapPdfPage: React.FC = () => {
         </div>
       )}
 
-      {/* Confirmation Modal: Delete PDF */}
-      {deleteConfirmId && (
+      {/* Confirmation Modal: Delete PDF (Owner Only) */}
+      {isOwner && deleteConfirmId && (
         <div className="fixed inset-0 z-50 bg-[#292929]/70 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white border border-[#E0DCD3] rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <div className="flex items-start gap-3">
@@ -520,6 +612,3 @@ export const RoadmapPdfPage: React.FC = () => {
     </div>
   );
 };
-
-
-

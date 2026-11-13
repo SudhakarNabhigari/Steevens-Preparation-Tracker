@@ -19,23 +19,20 @@ import { DoubtNotebookPage } from './components/DoubtNotebookPage';
 import { PreparationCalendarPage } from './components/PreparationCalendarPage';
 
 const AppContent: React.FC = () => {
-  const { state, currentPage, isPreparationLocked, userRole } = useApp();
+  const { state, currentPage } = useApp();
 
   if (!state.isAuthenticated) {
     return <LoginScreen />;
   }
-
-  // Guests can preview all pages without date lock blocking them
-  const isLockedForCurrentView = userRole !== 'guest' && isPreparationLocked;
 
   const renderCurrentView = () => {
     switch (currentPage) {
       case 'lock_screen':
         return <LockScreen />;
       case 'home_dashboard':
-        return isLockedForCurrentView ? <LockScreen /> : <HomeDashboard />;
+        return <HomeDashboard />;
       case 'today_work':
-        return isLockedForCurrentView ? <LockScreen /> : <TodayWorkPage />;
+        return <TodayWorkPage />;
       case 'dsa_track':
         return <TrackPreparationPage trackId="dsa" />;
       case 'azure_track':
@@ -45,7 +42,7 @@ const AppContent: React.FC = () => {
       case 'all_days':
         return <AllDaysGrid />;
       case 'weekly_assessments':
-        return isLockedForCurrentView ? <LockScreen /> : <WeeklyAssessmentsPage />;
+        return <WeeklyAssessmentsPage />;
       case 'weekly_progress':
         return <WeeklyProgressPage />;
       case 'resource_library':
@@ -61,7 +58,7 @@ const AppContent: React.FC = () => {
       case 'settings':
         return <SettingsPage />;
       default:
-        return isLockedForCurrentView ? <LockScreen /> : <HomeDashboard />;
+        return <HomeDashboard />;
     }
   };
 

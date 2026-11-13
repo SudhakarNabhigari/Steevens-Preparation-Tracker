@@ -18,6 +18,7 @@ import {
   AZURE_END_DATE,
   AZURE_TOTAL_PLANNED_HOURS
 } from '../data/azureSyllabus';
+import { getDayLockStatus, SUB_TRACK_MAX_DAYS } from '../utils/dailyLock';
 import { TrackDaySchedule } from '../types';
 import {
   Code2,
@@ -35,10 +36,11 @@ import {
   Award,
   Target,
   BookOpen,
-  ShieldAlert,
+  ShieldCheck,
   Calendar,
   ArrowLeft,
-  Search
+  Search,
+  Lock
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -50,12 +52,13 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
   const {
     state,
     userRole,
-    isPreparationLocked,
+    nowTimestamp,
     currentTrackDayNumber,
     selectedDsaDay,
     setSelectedDsaDay,
     selectedAzureDay,
     setSelectedAzureDay,
+    isTrackDayUnlocked,
     getTrackDayStatus,
     getTrackDayTaskCompletion,
     toggleTrackTaskCompletion,
@@ -80,10 +83,14 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
   const setSelectedDay = isDsa ? setSelectedDsaDay : setSelectedAzureDay;
 
   const day = days[selectedDay - 1] || days[0];
+  const isDayUnlocked = isTrackDayUnlocked(trackId, day.dayNumber);
+  const weekFirstDay = Math.max(1, (day.weekNumber - 1) * 7 + 1);
+  const isWeekUnlocked = isTrackDayUnlocked(trackId, weekFirstDay);
+  const lockStatus = getDayLockStatus(day.dayNumber, nowTimestamp, SUB_TRACK_MAX_DAYS);
   const { completed, total, percentage } = getTrackDayTaskCompletion(trackId, day.dayNumber);
   const status = getTrackDayStatus(trackId, day.dayNumber);
 
-  const isLockedOwner = userRole === 'owner' && isPreparationLocked;
+  const isLockedDay = !isDayUnlocked;
 
   const [notesInput, setNotesInput] = useState(trackProgress.dayNotes[day.dayNumber] || '');
   const [notesSavedAlert, setNotesSavedAlert] = useState(false);
@@ -149,17 +156,23 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
   const filteredGridDays = useMemo(() => {
     if (!searchTerm.trim()) return days;
     const q = searchTerm.toLowerCase();
-    return days.filter(
-      d =>
+    return days.filter(d => {
+      const unlocked = isTrackDayUnlocked(trackId, d.dayNumber);
+      const baseMatch =
         d.topic.toLowerCase().includes(q) ||
+        d.phaseTitle.toLowerCase().includes(q) ||
+        `day ${d.dayNumber}`.includes(q);
+      if (baseMatch) return true;
+      if (!unlocked) return false;
+      return (
         d.objective.toLowerCase().includes(q) ||
-        d.studentWork.toLowerCase().includes(q) ||
-        `day ${d.dayNumber}`.includes(q)
-    );
-  }, [days, searchTerm]);
+        d.studentWork.toLowerCase().includes(q)
+      );
+    });
+  }, [days, searchTerm, isTrackDayUnlocked, trackId]);
 
   const handleToggleChecklist = (taskId: string) => {
-    if (isLockedOwner) return;
+    if (isLockedDay) return;
     const wasDone = !!trackProgress.completedTasks[taskId];
     toggleTrackTaskCompletion(trackId, day.dayNumber, taskId);
     if (!wasDone && completed + 1 === total) {
@@ -172,14 +185,14 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
   };
 
   const handleSaveNotes = () => {
-    if (isLockedOwner) return;
+    if (isLockedDay) return;
     saveTrackDayNotes(trackId, day.dayNumber, notesInput);
     setNotesSavedAlert(true);
     setTimeout(() => setNotesSavedAlert(false), 2000);
   };
 
   const handleSaveRevision = () => {
-    if (isLockedOwner) return;
+    if (!isWeekUnlocked) return;
     saveTrackRevisionRecord(trackId, day.weekNumber, {
       score: revScore !== '' ? Number(revScore) : undefined,
       maxScore: revMaxScore !== '' ? Number(revMaxScore) : undefined,
@@ -286,24 +299,23 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
         </div>
       )}
 
-      {/* Owner Locked Notice Banner if before Nov 16 2026 */}
-      {isLockedOwner && (
-        <div className="p-4 rounded-2xl bg-[#292929] text-[#F3EFE6] border border-[#E7826D] flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
+      {/* Strict IST Schedule Info Banner */}
+      {isLockedDay && (
+        <div className="p-4 rounded-2xl bg-[#292929] text-[#F3EFE6] border border-[#E7826D]/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm">
           <div className="flex items-start gap-3">
-            <ShieldAlert className="w-5 h-5 text-[#E7826D] shrink-0 mt-0.5" />
+            <ShieldCheck className="w-5 h-5 text-[#E7826D] shrink-0 mt-0.5" />
             <div className="text-xs space-y-0.5">
-              <span className="font-bold block">Preparation Locked Until 16 November 2026 (IST)</span>
+              <span className="font-bold block">
+                Day {day.dayNumber} Unlocks {lockStatus.unlockLabelIst}
+              </span>
               <span className="text-[#C2BEB5]">
-                You can inspect the complete 100-day {isDsa ? 'DSA in C++' : 'Azure'} syllabus now. Checkboxes, notes, and study timers unlock on 16 Nov 2026 (or when Simulation Mode is enabled in Settings).
+                Explore the complete 100-day {isDsa ? 'DSA in C++' : 'Azure'} roadmap structure and topics now. Detailed daily tasks, instructions, notes, and timers unlock automatically at 00:00 IST on each scheduled date.
               </span>
             </div>
           </div>
-          <button
-            onClick={() => setCurrentPage('settings')}
-            className="px-3 py-1.5 rounded-lg bg-[#E7826D] text-[#292929] font-bold text-xs shrink-0 cursor-pointer"
-          >
-            Settings
-          </button>
+          <span className="px-3 py-1.5 rounded-lg bg-[#E7826D]/15 border border-[#E7826D]/40 text-[#E7826D] font-mono font-bold text-xs shrink-0 self-start sm:self-auto">
+            {String(lockStatus.days).padStart(2, '0')}d : {String(lockStatus.hours).padStart(2, '0')}h : {String(lockStatus.minutes).padStart(2, '0')}m
+          </span>
         </div>
       )}
 
@@ -453,7 +465,7 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
               {status.replace('-', ' ')}
             </span>
             <span className="font-mono font-bold text-[#292929]">
-              {completed}/{total} ({percentage}%)
+              {isDayUnlocked ? `${completed}/${total} (${percentage}%)` : 'LOCKED'}
             </span>
           </div>
         </div>
@@ -462,47 +474,98 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
         <div className="w-full h-2.5 bg-[#FAF8F5] rounded-full overflow-hidden border border-[#E0DCD3]">
           <div
             className={`h-full transition-all duration-300 ${
-              percentage === 100 ? 'bg-[#16A34A]' : percentage > 0 ? 'bg-[#E7826D]' : 'bg-transparent'
+              isDayUnlocked && percentage === 100
+                ? 'bg-[#16A34A]'
+                : isDayUnlocked && percentage > 0
+                ? 'bg-[#E7826D]'
+                : 'bg-transparent'
             }`}
-            style={{ width: `${percentage}%` }}
+            style={{ width: `${isDayUnlocked ? percentage : 0}%` }}
           />
         </div>
 
-        {/* Exact Curriculum Fields Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 text-xs">
-          <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#E7826D] block">
-              Class Focus
-            </span>
-            <p className="font-semibold text-[#292929]">{day.classFocus}</p>
-          </div>
-          <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#E7826D] block">
-              Objective
-            </span>
-            <p className="text-[#292929] leading-relaxed">{day.objective}</p>
-          </div>
-          <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#E7826D] block">
-              Student Work
-            </span>
-            <p className="text-[#292929] leading-relaxed">{day.studentWork}</p>
-          </div>
-          <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-[#E7826D] block">
-              Milestone / Output
-            </span>
-            <p className="font-semibold text-[#292929] leading-relaxed">{day.milestoneOutput}</p>
-          </div>
-        </div>
+        {/* Exact Curriculum Fields Grid (Only revealed once unlocked at 00:00 IST) */}
+        {isDayUnlocked ? (
+          <>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 text-xs">
+              <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#E7826D] block">
+                  Class Focus
+                </span>
+                <p className="font-semibold text-[#292929]">{day.classFocus}</p>
+              </div>
+              <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#E7826D] block">
+                  Objective
+                </span>
+                <p className="text-[#292929] leading-relaxed">{day.objective}</p>
+              </div>
+              <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#E7826D] block">
+                  Student Work
+                </span>
+                <p className="text-[#292929] leading-relaxed">{day.studentWork}</p>
+              </div>
+              <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] space-y-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#E7826D] block">
+                  Milestone / Output
+                </span>
+                <p className="font-semibold text-[#292929] leading-relaxed">{day.milestoneOutput}</p>
+              </div>
+            </div>
 
-        <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-xs">
-          <span className="font-bold text-[#292929]">Daily Scope: </span>
-          <span className="text-[#5A5650]">{day.dailyScope}</span>
-        </div>
+            <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-xs">
+              <span className="font-bold text-[#292929]">Daily Scope: </span>
+              <span className="text-[#5A5650]">{day.dailyScope}</span>
+            </div>
+          </>
+        ) : (
+          <div className="p-5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-bold text-[#292929]">
+                <Lock className="w-4 h-4 text-[#E7826D]" />
+                <span>Day {day.dayNumber} Detailed Tasks & Completion Controls Locked</span>
+              </div>
+              <span className="font-mono text-xs font-semibold text-[#78716C]">
+                Unlocks {lockStatus.unlockLabelIst}
+              </span>
+            </div>
+            <p className="text-xs text-[#5A5650] leading-relaxed">
+              Future task details, daily work instructions, deliverables, checklists, notes, and timers unlock automatically at{' '}
+              <strong className="text-[#292929] font-mono">{lockStatus.unlockLabelIst}</strong>.
+            </p>
+            <div className="grid grid-cols-4 gap-2.5 max-w-md mx-auto">
+              <div className="bg-white border border-[#E0DCD3] rounded-xl p-2.5 text-center">
+                <span className="text-xl font-extrabold font-mono text-[#292929] tabular-nums block">
+                  {String(lockStatus.days).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase tracking-wider text-[#78716C] font-semibold">Days</span>
+              </div>
+              <div className="bg-white border border-[#E0DCD3] rounded-xl p-2.5 text-center">
+                <span className="text-xl font-extrabold font-mono text-[#292929] tabular-nums block">
+                  {String(lockStatus.hours).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase tracking-wider text-[#78716C] font-semibold">Hours</span>
+              </div>
+              <div className="bg-white border border-[#E0DCD3] rounded-xl p-2.5 text-center">
+                <span className="text-xl font-extrabold font-mono text-[#292929] tabular-nums block">
+                  {String(lockStatus.minutes).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase tracking-wider text-[#78716C] font-semibold">Min</span>
+              </div>
+              <div className="bg-white border border-[#E0DCD3] rounded-xl p-2.5 text-center">
+                <span className="text-xl font-extrabold font-mono text-[#E7826D] tabular-nums block">
+                  {String(lockStatus.seconds).padStart(2, '0')}
+                </span>
+                <span className="text-[10px] uppercase tracking-wider text-[#78716C] font-semibold">Sec</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Checklist + Notes + Weekly Revision Two-Column Workspace */}
+      {/* Checklist + Notes + Weekly Revision Two-Column Workspace (Unlocked Days Only) */}
+      {isDayUnlocked && (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left 2 Columns: Checklist & Study Notes */}
         <div className="lg:col-span-2 space-y-5">
@@ -525,11 +588,7 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
                   <div
                     key={item.id}
                     onClick={() => handleToggleChecklist(item.id)}
-                    className={`flex items-start gap-3 p-3.5 rounded-xl border transition-colors ${
-                      isLockedOwner
-                        ? 'bg-[#FAF8F5] border-[#E0DCD3] opacity-70 cursor-not-allowed'
-                        : 'bg-[#FAF8F5] hover:bg-[#F3EFE6] border-[#E0DCD3] cursor-pointer'
-                    }`}
+                    className="flex items-start gap-3 p-3.5 rounded-xl border transition-colors bg-[#FAF8F5] hover:bg-[#F3EFE6] border-[#E0DCD3] cursor-pointer"
                   >
                     <div className="mt-0.5 shrink-0">
                       {isDone ? (
@@ -575,21 +634,19 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
             <textarea
               value={notesInput}
               onChange={e => setNotesInput(e.target.value)}
-              disabled={isLockedOwner}
               placeholder={
                 isDsa
                   ? 'Record C++ implementation notes, time/space complexity, dry-run traces, or compile errors fixed...'
-                  : 'Record Azure service comparison notes, CLI/portal observations, lab cleanup confirmation, or simulation notes...'
+                  : 'Record Azure service comparison notes, CLI/portal observations, lab cleanup confirmation, or notes...'
               }
               rows={4}
-              className="w-full p-3 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-[#292929] text-xs placeholder:text-[#A8A29E] focus:outline-none focus:border-[#E7826D] focus:bg-white disabled:opacity-60"
+              className="w-full p-3 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-[#292929] text-xs placeholder:text-[#A8A29E] focus:outline-none focus:border-[#E7826D] focus:bg-white"
             />
 
             <div className="flex justify-end">
               <button
                 onClick={handleSaveNotes}
-                disabled={isLockedOwner}
-                className="px-4 py-2 bg-[#292929] hover:bg-[#404040] disabled:opacity-50 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer"
+                className="px-4 py-2 bg-[#292929] hover:bg-[#404040] text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer"
               >
                 <Save className="w-3.5 h-3.5" />
                 <span>Save Notes</span>
@@ -600,6 +657,7 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
 
         {/* Right Column: Weekly Revision / Assessment Checkpoint Log */}
         <div className="space-y-5">
+          {isWeekUnlocked && (
           <div className="bg-white border border-[#E0DCD3] rounded-2xl p-5 shadow-sm space-y-3">
             <div className="flex items-center justify-between border-b border-[#E0DCD3] pb-2">
               <div className="flex items-center gap-2 text-sm font-bold text-[#292929] uppercase tracking-wider">
@@ -633,7 +691,6 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
                   min={0}
                   value={revScore}
                   onChange={e => setRevScore(e.target.value)}
-                  disabled={isLockedOwner}
                   placeholder="e.g. 85"
                   className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-xs text-[#292929] focus:outline-none focus:border-[#E7826D]"
                 />
@@ -647,7 +704,6 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
                   min={1}
                   value={revMaxScore}
                   onChange={e => setRevMaxScore(e.target.value)}
-                  disabled={isLockedOwner}
                   placeholder="100"
                   className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-xs text-[#292929] focus:outline-none focus:border-[#E7826D]"
                 />
@@ -661,7 +717,6 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
               <textarea
                 value={revNotes}
                 onChange={e => setRevNotes(e.target.value)}
-                disabled={isLockedOwner}
                 rows={3}
                 placeholder="Weak areas revisited, edge cases missed, or lab cleanup verified..."
                 className="w-full p-2.5 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-xs text-[#292929] focus:outline-none focus:border-[#E7826D]"
@@ -673,7 +728,6 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
                 type="checkbox"
                 checked={revPassed}
                 onChange={e => setRevPassed(e.target.checked)}
-                disabled={isLockedOwner}
                 className="accent-[#E7826D]"
               />
               <span>Mark Week {day.weekNumber} checkpoint passed</span>
@@ -691,13 +745,13 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
               )}
               <button
                 onClick={handleSaveRevision}
-                disabled={isLockedOwner}
-                className="px-3.5 py-2 bg-[#E7826D] hover:bg-[#d8735e] disabled:opacity-50 text-white text-xs font-bold rounded-xl cursor-pointer"
+                className="px-3.5 py-2 bg-[#E7826D] hover:bg-[#d8735e] text-white text-xs font-bold rounded-xl cursor-pointer"
               >
                 Save Checkpoint
               </button>
             </div>
           </div>
+          )}
 
           {/* Authoritative PDF Info Box */}
           <div className="bg-white border border-[#E0DCD3] rounded-2xl p-4 shadow-sm space-y-2 text-xs">
@@ -711,6 +765,7 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
           </div>
         </div>
       </div>
+      )}
 
       {/* 100-Day Interactive Track Grid */}
       <div className="bg-white border border-[#E0DCD3] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
@@ -796,14 +851,21 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
               {isDsa ? 'DSA in C++' : 'Azure'} Track Timer · {day.scheduleLabel}
             </span>
             <span className="text-xs text-[#E0DCD3] font-medium block">
-              {userRole === 'guest'
+              {!isDayUnlocked
+                ? `Locked until ${lockStatus.unlockLabelIst} (Asia/Kolkata).`
+                : userRole === 'guest'
                 ? `Guest Preview: Run the ${day.targetMinutes}-minute timer for Day ${day.dayNumber}.`
                 : `Independent timer for ${isDsa ? 'DSA in C++' : 'Azure'} Day ${day.dayNumber} (${day.topic}).`}
             </span>
           </div>
 
           <div className="flex items-center gap-3 shrink-0">
-            {isRunningThisTrackDay ? (
+            {!isDayUnlocked ? (
+              <span className="px-4 py-2.5 rounded-xl bg-white/10 border border-white/15 text-[#E0DCD3] text-xs font-mono font-bold flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-[#E7826D]" />
+                <span>LOCKED UNTIL {lockStatus.unlockDateLabelIst.toUpperCase()}</span>
+              </span>
+            ) : isRunningThisTrackDay ? (
               <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 border border-white/20 text-white text-xs font-semibold">
                 <span className="w-2 h-2 rounded-full bg-[#E7826D] animate-pulse" />
                 <span>{isDsa ? 'DSA' : 'Azure'} Timer Running in Header</span>
@@ -811,8 +873,7 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
             ) : (
               <button
                 onClick={() => startTimer(day.dayNumber, day.targetMinutes, 'daily', trackId)}
-                disabled={isLockedOwner}
-                className="w-full sm:w-auto px-6 py-3 bg-[#E7826D] hover:bg-[#D66F5A] disabled:opacity-50 text-white rounded-xl text-sm font-bold shadow-md shadow-[#E7826D]/30 flex items-center justify-center gap-2 cursor-pointer transition-all uppercase tracking-wider"
+                className="w-full sm:w-auto px-6 py-3 bg-[#E7826D] hover:bg-[#D66F5A] text-white rounded-xl text-sm font-bold shadow-md shadow-[#E7826D]/30 flex items-center justify-center gap-2 cursor-pointer transition-all uppercase tracking-wider"
               >
                 <Play className="w-4 h-4 fill-white" />
                 <span>START {isDsa ? 'DSA' : 'AZURE'} TIMER ({day.targetMinutes}m)</span>

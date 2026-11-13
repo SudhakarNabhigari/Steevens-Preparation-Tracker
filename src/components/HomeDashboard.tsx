@@ -4,6 +4,7 @@ import { ALL_180_DAYS } from '../data/syllabus';
 import { DSA_TOTAL_PLANNED_HOURS } from '../data/dsaSyllabus';
 import { AZURE_TOTAL_PLANNED_HOURS } from '../data/azureSyllabus';
 import { TrackDayPickerModal } from './TrackDayPickerModal';
+import { getDayLockStatus, MAIN_TRACK_MAX_DAYS } from '../utils/dailyLock';
 import {
   OverallProgressBar,
   CompletionTrajectoryChart,
@@ -23,8 +24,10 @@ import {
 export const HomeDashboard: React.FC = () => {
   const {
     state,
+    nowTimestamp,
     currentDayNumber,
     currentDaySchedule,
+    isDayUnlocked,
     getDayStatus,
     getDayTaskCompletion,
     getTrackDayStatus,
@@ -37,6 +40,8 @@ export const HomeDashboard: React.FC = () => {
 
   const resumeDay = state.lastActiveDayNumber || currentDayNumber || 1;
   const resumeSchedule = ALL_180_DAYS[resumeDay - 1] || ALL_180_DAYS[0];
+  const isResumeUnlocked = isDayUnlocked(resumeDay);
+  const resumeLockStatus = getDayLockStatus(resumeDay, nowTimestamp, MAIN_TRACK_MAX_DAYS);
 
   // Main Plan metric counts
   let completedDaysCount = 0;
@@ -135,7 +140,9 @@ export const HomeDashboard: React.FC = () => {
             {resumeSchedule.topic}
           </h2>
           <p className="text-xs text-[#5A5650] max-w-2xl">
-            {resumeSchedule.practicalTask}
+            {isResumeUnlocked
+              ? resumeSchedule.practicalTask
+              : `Module ${resumeSchedule.moduleNumber}: ${resumeSchedule.moduleTitle} · Scheduled to unlock ${resumeLockStatus.unlockLabelIst}. Daily tasks unlock automatically on schedule.`}
           </p>
         </div>
 
@@ -147,7 +154,11 @@ export const HomeDashboard: React.FC = () => {
             }}
             className="w-full sm:w-auto px-6 py-3 bg-[#E7826D] hover:bg-[#d8735e] text-white rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-all uppercase tracking-wide"
           >
-            <span>Continue Preparation (Day {resumeDay})</span>
+            <span>
+              {isResumeUnlocked
+                ? `Continue Preparation (Day ${resumeDay})`
+                : `Explore Main Plan (Day ${resumeDay})`}
+            </span>
             <ChevronRight className="w-4 h-4" />
           </button>
         </div>

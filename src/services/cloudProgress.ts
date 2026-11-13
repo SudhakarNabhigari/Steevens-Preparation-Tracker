@@ -1,4 +1,4 @@
-﻿import { supabase } from '../lib/supabase';
+import { requireSupabaseClient } from '../lib/supabase';
 import { hydrateUserState } from './storage';
 import type { UserState } from '../types';
 
@@ -19,6 +19,7 @@ export async function loadOrMigrateOwnerProgress(
   userId: string,
   localState: UserState
 ): Promise<UserState> {
+  const supabase = requireSupabaseClient();
   const { data, error } = await supabase
     .from('user_progress')
     .select('state')
@@ -59,6 +60,7 @@ export async function saveOwnerProgressToCloud(
   userId: string,
   state: UserState
 ): Promise<void> {
+  const supabase = requireSupabaseClient();
   const cloudState = getSafeCloudState(state);
 
   const { error } = await supabase

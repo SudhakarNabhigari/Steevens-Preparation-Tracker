@@ -1,4 +1,4 @@
-﻿import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   DaySchedule,
   DayStatus,
@@ -14,7 +14,10 @@ import {
   DoubtStatus,
   TrackId,
   TrackProgressState,
-  TrackRevisionRecord
+  TrackRevisionRecord,
+  SharedAppSettings,
+  WrittenReviewStatus,
+  WeeklyReviewNotes
 } from '../types';
 import {
   ALL_180_DAYS,
@@ -22,6 +25,19 @@ import {
 } from '../data/syllabus';
 import { DSA_100_DAYS } from '../data/dsaSyllabus';
 import { AZURE_100_DAYS } from '../data/azureSyllabus';
+import { getUnlockedAssessmentForWeek } from '../data/assessments';
+import { isAssessmentUnlockedByIstClock } from '../utils/assessmentLock';
+import {
+  isDayUnlockedByIstClock,
+  getCurrentIstScheduleDay,
+  MAIN_TRACK_MAX_DAYS,
+  SUB_TRACK_MAX_DAYS
+} from '../utils/dailyLock';
+import {
+  applyRubricSelfReviewToSubmission,
+  buildAssessmentSnapshot,
+  createEvaluatedSubmission
+} from '../utils/assessmentScoring';
 import {
   loadRoleStateSync,
   saveRoleStatePermanent,
@@ -30,17 +46,15 @@ import {
   OWNER_STORAGE_KEY,
   GUEST_STORAGE_KEY,
   DEFAULT_OWNER_STATE,
-  DEFAULT_GUEST_STATE,
   exportBackupJson,
-  importBackupJson
+  importBackupJson,
+  loadSharedContentAsync,
+  applySharedContentToGuestState,
+  subscribeToSharedContentUpdates,
+  resetGuestPreviewState,
+  extractSharedContentFromOwner,
+  saveSharedContent
 } from '../services/storage';
-import { supabase } from '../lib/supabase';
-import { migrateLegacyRoadmapPdfs, deleteRoadmapPdfFromStorage } from '../services/roadmapPdfStorage';
-import {
-  OWNER_AUTH_EMAIL,
-  loadOrMigrateOwnerProgress,
-  saveOwnerProgressToCloud
-} from '../services/cloudProgress';
 
 export type NavigationPage =
   | 'login'
@@ -75,6 +89,7 @@ interface AppContextType {
   saveStatus: SaveStatus;
 
   // Real clock & lock state
+  nowTimestamp: number;
   isPreparationLocked: boolean;
   lockTimeRemaining: {
     days: number;
@@ -88,21 +103,37 @@ interface AppContextType {
   currentDaySchedule: DaySchedule;
   isSaturdayToday: boolean;
 
-  // Day status helpers
+  // Day unlock & status helpers
+  isDayUnlocked: (dayNumber: number) => boolean;
+  isTrackDayUnlocked: (track: TrackId, dayNumber: number) => boolean;
   getDayStatus: (dayNumber: number) => DayStatus;
   getDayTaskCompletion: (dayNumber: number) => { completed: number; total: number; percentage: number };
   getTrackDayStatus: (track: TrackId, dayNumber: number) => DayStatus;
   getTrackDayTaskCompletion: (track: TrackId, dayNumber: number) => { completed: number; total: number; percentage: number };
 
   // Authentication
-  login: (username: string, pass: string, targetRole: UserRole) => Promise<boolean>;
+  login: (username: string, pass: string, targetRole: UserRole) => boolean;
   logout: () => void;
   updateCredentials: (username: string, password: string) => void;
 
   // Main Plan Task & Notes Actions
   toggleTaskCompletion: (dayNumber: number, taskId: string) => void;
   saveDayNotes: (dayNumber: number, notes: string) => void;
-  submitAssessment: (submission: AssessmentSubmission) => void;
+  submitAssessment: (submission: AssessmentSubmission) => boolean;
+
+  // 26-Week Assessment Lock, Attempt, Rubric Self-Review & LeetCode Actions
+  isAssessmentWeekUnlocked: (weekNumber: number) => boolean;
+  startAssessmentAttempt: (weekNumber: number) => { success: boolean; reason?: string };
+  saveAssessmentDraftAnswer: (weekNumber: number, questionId: string, value: string | number) => void;
+  updateAssessmentAttemptElapsed: (weekNumber: number, elapsedSeconds: number) => void;
+  cancelAssessmentAttempt: (weekNumber?: number) => void;
+  updateAssessmentRubricReview: (
+    weekNumber: number,
+    selfReviews: Record<string, WrittenReviewStatus>,
+    reviewNotes?: WeeklyReviewNotes
+  ) => boolean;
+  toggleAssessmentLeetCodeProblem: (weekNumber: number, problemId: string) => boolean;
+  saveAssessmentLeetCodeNotes: (weekNumber: number, problemId: string, notes: string) => boolean;
 
   // DSA & Azure Independent Track Actions
   toggleTrackTaskCompletion: (track: 'dsa' | 'azure', dayNumber: number, taskId: string) => void;
@@ -120,18 +151,24 @@ interface AppContextType {
   resumeTimer: () => void;
   resetTimer: () => void;
 
-  // PDF Management
-  uploadRoadmapPdf: (file: File) => Promise<{ success: boolean; message: string; pdfId?: string }>;
+  // PDF Management (Owner Only)
+  uploadRoadmapPdf: (
+    file: File
+  ) => Promise<{ success: boolean; message: string; pdfId?: string; record?: RoadmapPdfRecord }>;
   setActivePdf: (pdfId: string) => void;
-  deletePdf: (pdfId: string) => Promise<boolean>;
+  deletePdf: (pdfId: string) => boolean;
 
-  // Resource Library Actions
+  // Resource Library Actions (Owner-managed shared content; read-only for Guest)
   addResource: (item: Omit<ResourceItem, 'id' | 'dateAdded'>) => { success: boolean; message: string; id?: string };
   updateResource: (id: string, updates: Partial<ResourceItem>) => boolean;
   deleteResource: (id: string) => boolean;
   toggleResourceImportant: (id: string) => void;
   toggleResourceCompleted: (id: string) => void;
   saveResourceNotes: (id: string, notes: string) => void;
+
+  // Shared Settings & Live Sync
+  updateSharedSettings: (updates: Partial<SharedAppSettings>) => boolean;
+  refreshSharedContent: () => Promise<void>;
 
   // Doubt & Error Notebook Actions
   addDoubtEntry: (entry: Omit<DoubtEntry, 'id' | 'dateCreated'>) => { success: boolean; id: string };
@@ -147,7 +184,9 @@ interface AppContextType {
   resetAllData: () => void;
   resetGuestPreview: () => void;
 
-  // Date Simulation (Owner testing)
+  // Ephemeral TEST MODE Schedule Preview (never modifies real locks or saved progress)
+  testModeEnabled: boolean;
+  testModeDate: string | null;
   setSimulationMode: (enabled: boolean, isoDate?: string) => void;
 }
 
@@ -167,23 +206,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [nowTimestamp, setNowTimestamp] = useState<number>(Date.now());
+  const [testModeEnabled, setTestModeEnabled] = useState<boolean>(false);
+  const [testModeDate, setTestModeDate] = useState<string | null>(null);
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const ownerAuthUserIdRef = useRef<string | null>(null);
-  const loginInProgressRef = useRef(false);
 
   // Rehydrate asynchronously from IndexedDB for maximum permanent persistence
   useEffect(() => {
     async function rehydrateFromDB() {
       const key = state.role === 'owner' ? OWNER_STORAGE_KEY : GUEST_STORAGE_KEY;
       const dbData = await loadFromIndexedDB(key);
-      if (loginInProgressRef.current || ownerAuthUserIdRef.current) return;
       if (
         dbData &&
         dbData.lastSavedTimestamp &&
         (!state.lastSavedTimestamp || dbData.lastSavedTimestamp > state.lastSavedTimestamp)
       ) {
         const hydrated = hydrateUserState(dbData, state.role);
+        if (state.role === 'owner') {
+          await saveSharedContent(extractSharedContentFromOwner(hydrated));
+        }
         setState(hydrated);
         if (hydrated.lastActiveDayNumber) {
           setSelectedDayNumberState(hydrated.lastActiveDayNumber);
@@ -199,6 +240,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     rehydrateFromDB();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const refreshSharedContent = useCallback(async () => {
+    const latestShared = await loadSharedContentAsync();
+    setState(prev => {
+      if (prev.role !== 'guest') return prev;
+      return applySharedContentToGuestState(prev, latestShared);
+    });
+  }, []);
+
+  // Live synchronization for Guest: BroadcastChannel, storage event, window focus, and page changes
+  useEffect(() => {
+    if (!state.isAuthenticated || state.role !== 'guest') return;
+
+    refreshSharedContent();
+
+    const unsubscribe = subscribeToSharedContentUpdates(() => {
+      refreshSharedContent();
+    });
+
+    const handleFocusOrVisibility = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        refreshSharedContent();
+      }
+    };
+
+    window.addEventListener('focus', handleFocusOrVisibility);
+    document.addEventListener('visibilitychange', handleFocusOrVisibility);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('focus', handleFocusOrVisibility);
+      document.removeEventListener('visibilitychange', handleFocusOrVisibility);
+    };
+  }, [state.isAuthenticated, state.role, currentPage, refreshSharedContent]);
 
   const setSelectedDayNumber = useCallback((day: number) => {
     const clamped = Math.min(180, Math.max(1, day));
@@ -251,7 +326,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [setSelectedDayNumber, setSelectedDsaDay, setSelectedAzureDay]
   );
 
-  // Permanent local save + Supabase cloud save
+  // Permanent Auto-Save on state changes
   useEffect(() => {
     if (!state.isAuthenticated) return;
 
@@ -259,25 +334,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
 
     saveTimeoutRef.current = setTimeout(async () => {
-      const localOk = await saveRoleStatePermanent({ ...state });
-      let cloudOk = true;
-
-      if (state.role === 'owner' && ownerAuthUserIdRef.current) {
-        try {
-          await saveOwnerProgressToCloud(ownerAuthUserIdRef.current, state);
-        } catch (error) {
-          console.error('Supabase progress save failed:', error);
-          cloudOk = false;
-        }
-      }
-
-      setSaveStatus(localOk && cloudOk ? 'saved' : 'error');
+      const ok = await saveRoleStatePermanent(state);
+      setSaveStatus(ok ? 'saved' : 'error');
     }, 250);
 
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, [state]);
+
   // Keep live second tick
   useEffect(() => {
     const interval = setInterval(() => {
@@ -286,83 +351,52 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return () => clearInterval(interval);
   }, []);
 
-  // Determine effective current time
-  const effectiveTimeMs = useMemo(() => {
-    if (state.role === 'owner' && state.simulationEnabled && state.simulationDate) {
-      return new Date(state.simulationDate).getTime();
-    }
-    return nowTimestamp;
-  }, [state.role, state.simulationEnabled, state.simulationDate, nowTimestamp]);
-
-  // Lock status calculation
+  // Strict real-clock IST lock status (identical for Owner & Guest, cannot be bypassed by TEST MODE)
   const isPreparationLocked = useMemo(() => {
-    if (state.role === 'guest') {
-      return false;
-    }
-    return effectiveTimeMs < START_DATE_MS;
-  }, [state.role, effectiveTimeMs]);
+    return nowTimestamp < START_DATE_MS;
+  }, [nowTimestamp]);
 
   const lockTimeRemaining = useMemo(() => {
-    const diff = Math.max(0, START_DATE_MS - effectiveTimeMs);
+    const diff = Math.max(0, START_DATE_MS - nowTimestamp);
     const seconds = Math.floor((diff / 1000) % 60);
     const minutes = Math.floor((diff / (1000 * 60)) % 60);
     const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     return { days, hours, minutes, seconds, totalMs: diff };
-  }, [effectiveTimeMs]);
+  }, [nowTimestamp]);
 
-  // Current day calculation (Main: 1..180, Track: 1..100)
+  // Current schedule day in Asia/Kolkata (Main: 1..180, Track: 1..100)
   const currentDayNumber = useMemo(() => {
-    if (state.role === 'owner' && isPreparationLocked) return 1;
-    if (state.role === 'guest') return state.lastActiveDayNumber || 1;
-    const diffMs = effectiveTimeMs - START_DATE_MS;
-    const day = Math.floor(diffMs / (24 * 3600 * 1000)) + 1;
-    return Math.min(180, Math.max(1, day));
-  }, [state.role, isPreparationLocked, effectiveTimeMs, state.lastActiveDayNumber]);
+    return getCurrentIstScheduleDay(nowTimestamp, MAIN_TRACK_MAX_DAYS);
+  }, [nowTimestamp]);
 
   const currentTrackDayNumber = useMemo(() => {
-    if (state.role === 'owner' && isPreparationLocked) return 1;
-    if (state.role === 'guest') return 1;
-    const diffMs = effectiveTimeMs - START_DATE_MS;
-    const day = Math.floor(diffMs / (24 * 3600 * 1000)) + 1;
-    return Math.min(100, Math.max(1, day));
-  }, [state.role, isPreparationLocked, effectiveTimeMs]);
+    return getCurrentIstScheduleDay(nowTimestamp, SUB_TRACK_MAX_DAYS);
+  }, [nowTimestamp]);
 
   const currentDaySchedule = useMemo(() => {
     return ALL_180_DAYS[currentDayNumber - 1] || ALL_180_DAYS[0];
   }, [currentDayNumber]);
 
   const isSaturdayToday = useMemo(() => {
-    const date = new Date(effectiveTimeMs);
+    if (nowTimestamp < START_DATE_MS) return false;
+    const date = new Date(nowTimestamp);
     const weekday = date.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', weekday: 'long' });
     return weekday === 'Saturday';
-  }, [effectiveTimeMs]);
+  }, [nowTimestamp]);
 
-  // Route protection
+  // Navigation & auth guard: all sections remain accessible whenever authenticated
   useEffect(() => {
-    const allowedWhileLocked: NavigationPage[] = [
-      'lock_screen',
-      'settings',
-      'original_roadmap',
-      'roadmap_pdf',
-      'preparation_calendar',
-      'all_days',
-      'weekly_progress',
-      'study_history',
-      'resource_library',
-      'doubt_notebook'
-    ];
-
     if (!state.isAuthenticated) {
-      setCurrentPage('login');
-    } else if (state.role === 'owner' && isPreparationLocked && !allowedWhileLocked.includes(currentPage)) {
-      setCurrentPage('lock_screen');
-    } else if (currentPage === 'login' || (currentPage === 'lock_screen' && !isPreparationLocked)) {
+      if (currentPage !== 'login') {
+        setCurrentPage('login');
+      }
+    } else if (currentPage === 'login' || currentPage === 'lock_screen') {
       setCurrentPage('home_dashboard');
     }
-  }, [state.isAuthenticated, state.role, isPreparationLocked, currentPage]);
+  }, [state.isAuthenticated, currentPage]);
 
-  // Timer engine - completely isolated per trackId
+  // Timer engine — completely isolated per trackId
   useEffect(() => {
     if (!state.timerState.isActive || state.timerState.isPaused) return;
 
@@ -477,14 +511,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [state.completedTasks]
   );
 
-  // Main Plan Status calculation
+  const isDayUnlocked = useCallback(
+    (dayNumber: number): boolean => {
+      return isDayUnlockedByIstClock(dayNumber, nowTimestamp, MAIN_TRACK_MAX_DAYS);
+    },
+    [nowTimestamp]
+  );
+
+  const isTrackDayUnlocked = useCallback(
+    (track: TrackId, dayNumber: number): boolean => {
+      const maxDay = track === 'main' ? MAIN_TRACK_MAX_DAYS : SUB_TRACK_MAX_DAYS;
+      return isDayUnlockedByIstClock(dayNumber, nowTimestamp, maxDay);
+    },
+    [nowTimestamp]
+  );
+
+  // Main Plan Status calculation (strict real-clock IST locking for both Owner & Guest)
   const getDayStatus = useCallback(
     (dayNum: number): DayStatus => {
-      if (state.role === 'owner' && isPreparationLocked) {
-        return 'locked';
-      }
-
-      if (state.role === 'owner' && dayNum > currentDayNumber) {
+      if (!isDayUnlockedByIstClock(dayNum, nowTimestamp, MAIN_TRACK_MAX_DAYS)) {
         return 'locked';
       }
 
@@ -495,7 +540,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return 'completed';
       }
 
-      if (state.role === 'owner' && dayNum < currentDayNumber) {
+      if (dayNum < currentDayNumber) {
         return 'incomplete';
       }
 
@@ -506,7 +551,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return 'not-started';
     },
-    [state.role, isPreparationLocked, currentDayNumber, getDayTaskCompletion, state.studyTimeSeconds]
+    [nowTimestamp, currentDayNumber, getDayTaskCompletion, state.studyTimeSeconds]
   );
 
   // Unified per-track task completion helper
@@ -535,18 +580,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [getDayTaskCompletion, state.dsaProgress, state.azureProgress]
   );
 
-  // Unified per-track status helper
+  // Unified per-track status helper (strict real-clock IST locking for both Owner & Guest)
   const getTrackDayStatus = useCallback(
     (track: TrackId, dayNum: number): DayStatus => {
       if (track === 'main') {
         return getDayStatus(dayNum);
       }
 
-      if (state.role === 'owner' && isPreparationLocked) {
-        return 'locked';
-      }
-
-      if (state.role === 'owner' && dayNum > currentTrackDayNumber) {
+      if (!isDayUnlockedByIstClock(dayNum, nowTimestamp, SUB_TRACK_MAX_DAYS)) {
         return 'locked';
       }
 
@@ -556,7 +597,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return 'completed';
       }
 
-      if (state.role === 'owner' && dayNum < currentTrackDayNumber) {
+      if (dayNum < currentTrackDayNumber) {
         return 'incomplete';
       }
 
@@ -570,8 +611,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     },
     [
       getDayStatus,
-      state.role,
-      isPreparationLocked,
+      nowTimestamp,
       currentTrackDayNumber,
       getTrackDayTaskCompletion,
       state.dsaProgress,
@@ -579,119 +619,90 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ]
   );
 
-  // Login: Supabase authentication for owner, local authentication for guest
-  const login = useCallback(async (
-    user: string,
-    pass: string,
-    targetRole: UserRole
-  ): Promise<boolean> => {
+  // Login
+  const login = useCallback((user: string, pass: string, targetRole: UserRole): boolean => {
     const trimmedUser = user.trim().toLowerCase();
 
-    if (targetRole === 'guest') {
-      if (trimmedUser !== 'guest' || pass !== 'Guest@0111') return false;
+    if (targetRole === 'owner') {
+      const ownerState = loadRoleStateSync('owner');
+      const storedOwnerUser = (ownerState.username || 'Steeven').trim().toLowerCase();
+      const storedOwnerPass = ownerState.passwordHash || 'Nani@011';
+      const isSteeven = trimmedUser === 'steeven' || trimmedUser === storedOwnerUser;
+      const isPassValid =
+        pass === storedOwnerPass || pass === 'Nani@011' || pass === 'Nani@0111';
+      if (isSteeven && isPassValid) {
+        ownerState.isAuthenticated = true;
+        setState(ownerState);
+        setSelectedDayNumberState(ownerState.lastActiveDayNumber || 1);
+        setSelectedDsaDayState(ownerState.dsaProgress?.lastActiveDayNumber || 1);
+        setSelectedAzureDayState(ownerState.azureProgress?.lastActiveDayNumber || 1);
 
-      ownerAuthUserIdRef.current = null;
-      const guestState = loadRoleStateSync('guest');
-      guestState.isAuthenticated = true;
-      setState(guestState);
-      setSelectedDayNumberState(guestState.lastActiveDayNumber || 1);
-      setSelectedDsaDayState(guestState.dsaProgress?.lastActiveDayNumber || 1);
-      setSelectedAzureDayState(guestState.azureProgress?.lastActiveDayNumber || 1);
-      return true;
-    }
+        // Also check IndexedDB asynchronously in case Owner has larger/newer state (e.g. PDFs > localStorage quota)
+        loadFromIndexedDB(OWNER_STORAGE_KEY).then(async dbOwner => {
+          if (
+            dbOwner &&
+            dbOwner.lastSavedTimestamp &&
+            (!ownerState.lastSavedTimestamp || dbOwner.lastSavedTimestamp > ownerState.lastSavedTimestamp)
+          ) {
+            const hydrated = hydrateUserState({ ...dbOwner, isAuthenticated: true }, 'owner');
+            await saveSharedContent(extractSharedContentFromOwner(hydrated));
+            setState(prev => (prev.role === 'owner' && prev.isAuthenticated ? hydrated : prev));
+          } else {
+            await saveSharedContent(extractSharedContentFromOwner(ownerState));
+          }
+        });
 
-    if (trimmedUser !== 'steeven' || !pass) return false;
-
-    loginInProgressRef.current = true;
-
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: OWNER_AUTH_EMAIL,
-        password: pass
-      });
-
-      if (error || !data.user) return false;
-
-      ownerAuthUserIdRef.current = data.user.id;
-
-      const cachedState = loadRoleStateSync('owner');
-      const indexedState = await loadFromIndexedDB(OWNER_STORAGE_KEY);
-
-      const localState =
-        indexedState?.lastSavedTimestamp &&
-        (!cachedState.lastSavedTimestamp ||
-          indexedState.lastSavedTimestamp > cachedState.lastSavedTimestamp)
-          ? hydrateUserState(indexedState, 'owner')
-          : cachedState;
-
-      const cloudState = await loadOrMigrateOwnerProgress(data.user.id, localState);
-
-      let ownerProgress = cloudState;
-
-      try {
-        const migratedPdfs = await migrateLegacyRoadmapPdfs(
-          data.user.id,
-          cloudState.uploadedPdfs || []
-        );
-
-        const migrationChanged = migratedPdfs.some((pdf, index) =>
-          pdf.storagePath !== cloudState.uploadedPdfs?.[index]?.storagePath ||
-          pdf.fileUrl !== cloudState.uploadedPdfs?.[index]?.fileUrl
-        );
-
-        if (migrationChanged) {
-          ownerProgress = {
-            ...cloudState,
-            uploadedPdfs: migratedPdfs,
-          };
-
-          await saveOwnerProgressToCloud(data.user.id, ownerProgress);
-          console.info('Legacy roadmap PDFs migrated to Supabase Storage.');
-        }
-      } catch (migrationError) {
-        console.error('Legacy PDF migration failed. Original PDF data was preserved:', migrationError);
+        return true;
       }
-
-      const ownerState = { ...ownerProgress, isAuthenticated: true };
-
-      setState(ownerState);
-      setSelectedDayNumberState(ownerState.lastActiveDayNumber || 1);
-      setSelectedDsaDayState(ownerState.dsaProgress?.lastActiveDayNumber || 1);
-      setSelectedAzureDayState(ownerState.azureProgress?.lastActiveDayNumber || 1);
-
-      return true;
-    } catch (error) {
-      console.error('Owner login/cloud loading failed:', error);
-      ownerAuthUserIdRef.current = null;
-      await supabase.auth.signOut();
       return false;
-    } finally {
-      loginInProgressRef.current = false;
+    } else {
+      const isGuest = trimmedUser === 'guest';
+      const isPassValid = pass === 'Guest@0111';
+      if (isGuest && isPassValid) {
+        const guestState = loadRoleStateSync('guest');
+        guestState.isAuthenticated = true;
+        setState(guestState);
+        setSelectedDayNumberState(guestState.lastActiveDayNumber || 1);
+        setSelectedDsaDayState(guestState.dsaProgress?.lastActiveDayNumber || 1);
+        setSelectedAzureDayState(guestState.azureProgress?.lastActiveDayNumber || 1);
+
+        // Ensure latest IndexedDB shared content & Guest sandbox progress are loaded asynchronously
+        Promise.all([loadFromIndexedDB(GUEST_STORAGE_KEY), loadSharedContentAsync()]).then(
+          ([dbGuest, latestShared]) => {
+            setState(prev => {
+              if (prev.role !== 'guest' || !prev.isAuthenticated) return prev;
+              const baseGuest =
+                dbGuest &&
+                dbGuest.lastSavedTimestamp &&
+                (!prev.lastSavedTimestamp || dbGuest.lastSavedTimestamp > prev.lastSavedTimestamp)
+                  ? hydrateUserState({ ...dbGuest, isAuthenticated: true }, 'guest')
+                  : prev;
+              return applySharedContentToGuestState(baseGuest, latestShared);
+            });
+          }
+        );
+
+        return true;
+      }
+      return false;
     }
   }, []);
 
   const logout = useCallback(() => {
-    console.log('[LOGOUT] Function called');
-    const wasOwner = state.role === 'owner';
-    ownerAuthUserIdRef.current = null;
-
-    if (wasOwner) {
-      void supabase.auth.signOut().catch(error => {
-        console.error('Supabase sign-out failed:', error);
-      });
-    }
-
+    setTestModeEnabled(false);
+    setTestModeDate(null);
     setState(prev => {
       const loggedOut = {
         ...prev,
         isAuthenticated: false,
         timerState: { ...prev.timerState, isActive: false, isPaused: false }
       };
-      void saveRoleStatePermanent(loggedOut);
+      saveRoleStatePermanent(loggedOut);
       return loggedOut;
     });
     setCurrentPage('login');
-  }, [state.role]);
+  }, []);
+
   const updateCredentials = useCallback(
     (newUsername: string, newPassword: string) => {
       if (state.role !== 'owner') return;
@@ -704,97 +715,327 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [state.role]
   );
 
-  // Main Plan Toggle task completion
-  const toggleTaskCompletion = useCallback(
-    (dayNum: number, taskId: string) => {
-      if (state.role === 'owner' && isPreparationLocked) return;
+  // Main Plan Toggle task completion (guarded by strict real IST clock)
+  const toggleTaskCompletion = useCallback((dayNum: number, taskId: string) => {
+    if (!isDayUnlockedByIstClock(dayNum, Date.now(), MAIN_TRACK_MAX_DAYS)) return;
 
-      setState(prev => {
-        const isCurrentlyDone = !!prev.completedTasks[taskId];
-        const updatedTasks = {
-          ...prev.completedTasks,
-          [taskId]: !isCurrentlyDone
-        };
+    setState(prev => {
+      const isCurrentlyDone = !!prev.completedTasks[taskId];
+      const updatedTasks = {
+        ...prev.completedTasks,
+        [taskId]: !isCurrentlyDone
+      };
 
-        const schedule = ALL_180_DAYS[dayNum - 1];
-        let allDone = false;
-        if (schedule) {
-          const allIds = [
-            `${dayNum}_concept`,
-            ...schedule.subtopics.map((_, i) => `${dayNum}_subtopic_${i}`),
-            `${dayNum}_practical`,
-            `${dayNum}_deliverable`,
-            ...schedule.revisionTasks.map((_, i) => `${dayNum}_revision_${i}`)
-          ];
-          allDone = allIds.every(id => updatedTasks[id]);
+      const schedule = ALL_180_DAYS[dayNum - 1];
+      let allDone = false;
+      if (schedule) {
+        const allIds = [
+          `${dayNum}_concept`,
+          ...schedule.subtopics.map((_, i) => `${dayNum}_subtopic_${i}`),
+          `${dayNum}_practical`,
+          `${dayNum}_deliverable`,
+          ...schedule.revisionTasks.map((_, i) => `${dayNum}_revision_${i}`)
+        ];
+        allDone = allIds.every(id => updatedTasks[id]);
+      }
+
+      return {
+        ...prev,
+        lastActiveDayNumber: dayNum,
+        completedTasks: updatedTasks,
+        completedDays: {
+          ...prev.completedDays,
+          [dayNum]: allDone
         }
+      };
+    });
+  }, []);
 
+  const saveDayNotes = useCallback((dayNum: number, notes: string) => {
+    if (!isDayUnlockedByIstClock(dayNum, Date.now(), MAIN_TRACK_MAX_DAYS)) return;
+
+    setState(prev => ({
+      ...prev,
+      lastActiveDayNumber: dayNum,
+      dayNotes: {
+        ...prev.dayNotes,
+        [dayNum]: notes
+      }
+    }));
+  }, []);
+
+  const isAssessmentWeekUnlocked = useCallback(
+    (weekNumber: number): boolean => {
+      return isAssessmentUnlockedByIstClock(weekNumber, nowTimestamp);
+    },
+    [nowTimestamp]
+  );
+
+  const startAssessmentAttempt = useCallback(
+    (weekNumber: number): { success: boolean; reason?: string } => {
+      const nowMs = Date.now();
+      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) {
+        return {
+          success: false,
+          reason: 'This assessment is locked until 00:00 IST on its scheduled unlock date.'
+        };
+      }
+      const unlocked = getUnlockedAssessmentForWeek(weekNumber, nowMs);
+      if (!unlocked) {
+        return { success: false, reason: 'Assessment data is unavailable.' };
+      }
+
+      const nowIso = new Date(nowMs).toISOString();
+      setState(prev => {
+        const existing = prev.activeAssessmentAttempt;
+        if (existing && existing.weekNumber === weekNumber) {
+          return {
+            ...prev,
+            activeAssessmentAttempt: {
+              ...existing,
+              lastUpdatedAt: nowIso
+            }
+          };
+        }
         return {
           ...prev,
-          lastActiveDayNumber: dayNum,
-          completedTasks: updatedTasks,
-          completedDays: {
-            ...prev.completedDays,
-            [dayNum]: allDone
+          activeAssessmentAttempt: {
+            weekNumber,
+            startedAt: nowIso,
+            lastUpdatedAt: nowIso,
+            answers: {},
+            elapsedSeconds: 0,
+            snapshot: buildAssessmentSnapshot(unlocked)
+          }
+        };
+      });
+
+      return { success: true };
+    },
+    []
+  );
+
+  const saveAssessmentDraftAnswer = useCallback(
+    (weekNumber: number, questionId: string, value: string | number) => {
+      const nowMs = Date.now();
+      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) return;
+
+      setState(prev => {
+        const attempt = prev.activeAssessmentAttempt;
+        if (!attempt || attempt.weekNumber !== weekNumber) return prev;
+        return {
+          ...prev,
+          activeAssessmentAttempt: {
+            ...attempt,
+            lastUpdatedAt: new Date(nowMs).toISOString(),
+            answers: {
+              ...attempt.answers,
+              [questionId]: value
+            }
           }
         };
       });
     },
-    [state.role, isPreparationLocked]
+    []
   );
 
-  const saveDayNotes = useCallback(
-    (dayNum: number, notes: string) => {
-      if (state.role === 'owner' && isPreparationLocked) return;
+  const updateAssessmentAttemptElapsed = useCallback(
+    (weekNumber: number, elapsedSeconds: number) => {
+      const nowMs = Date.now();
+      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) return;
 
-      setState(prev => ({
-        ...prev,
-        lastActiveDayNumber: dayNum,
-        dayNotes: {
-          ...prev.dayNotes,
-          [dayNum]: notes
-        }
-      }));
+      setState(prev => {
+        const attempt = prev.activeAssessmentAttempt;
+        if (!attempt || attempt.weekNumber !== weekNumber) return prev;
+        return {
+          ...prev,
+          activeAssessmentAttempt: {
+            ...attempt,
+            elapsedSeconds: Math.max(0, Math.min(180 * 60, Math.round(elapsedSeconds)))
+          }
+        };
+      });
     },
-    [state.role, isPreparationLocked]
+    []
   );
+
+  const cancelAssessmentAttempt = useCallback((weekNumber?: number) => {
+    setState(prev => {
+      if (!prev.activeAssessmentAttempt) return prev;
+      if (weekNumber !== undefined && prev.activeAssessmentAttempt.weekNumber !== weekNumber) {
+        return prev;
+      }
+      return {
+        ...prev,
+        activeAssessmentAttempt: null
+      };
+    });
+  }, []);
 
   const submitAssessment = useCallback(
-    (submission: AssessmentSubmission) => {
+    (submission: AssessmentSubmission): boolean => {
+      const nowMs = Date.now();
+      const week = submission.weekNumber;
+      if (!isAssessmentUnlockedByIstClock(week, nowMs)) {
+        return false;
+      }
+
+      const unlocked = getUnlockedAssessmentForWeek(week, nowMs);
+      if (!unlocked) {
+        return false;
+      }
+
+      const evaluatedSubmission = createEvaluatedSubmission({
+        assessment: unlocked,
+        answers: submission.answers || {},
+        timeSpentSeconds: submission.timeSpentSeconds,
+        reviewNotes: submission.reviewNotes,
+        writtenSelfReviews: submission.writtenSelfReviews
+      });
+
       setState(prev => {
-        const week = submission.weekNumber;
         const updatedSubmissions = {
           ...prev.assessmentSubmissions,
-          [week]: submission
+          [week]: evaluatedSubmission
         };
 
         const newLog: StudySessionLog = {
           id: `assess_${week}_${Date.now()}`,
           trackId: 'main',
-          dayNumber: currentDayNumber,
+          dayNumber: unlocked.scheduledDayNumber || currentDayNumber,
           date: new Date().toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata' }),
-          startTime: new Date(Date.now() - submission.timeSpentSeconds * 1000).toISOString(),
+          startTime: new Date(Date.now() - evaluatedSubmission.timeSpentSeconds * 1000).toISOString(),
           endTime: new Date().toISOString(),
-          durationSeconds: submission.timeSpentSeconds,
+          durationSeconds: evaluatedSubmission.timeSpentSeconds,
           type: 'weekly_assessment',
-          completedTasksCount: Object.keys(submission.answers).length,
-          notes: `Main Plan Week ${week} Assessment submitted with score ${submission.score}/${submission.maxScore} (${submission.percentage}%)`
+          completedTasksCount: Object.keys(evaluatedSubmission.answers).length,
+          notes: `Main Plan Week ${week} Assessment submitted: MCQ ${evaluatedSubmission.mcqScore}/${evaluatedSubmission.mcqMaxScore}, Rubric Review ${evaluatedSubmission.writtenReviewScore}/${evaluatedSubmission.writtenMaxScore}, Total ${evaluatedSubmission.score}/${evaluatedSubmission.maxScore} (${evaluatedSubmission.percentage}%)`
         };
+
+        const shouldClearAttempt = prev.activeAssessmentAttempt?.weekNumber === week;
 
         return {
           ...prev,
           assessmentSubmissions: updatedSubmissions,
+          activeAssessmentAttempt: shouldClearAttempt ? null : prev.activeAssessmentAttempt,
           studyLogs: [newLog, ...prev.studyLogs]
         };
       });
+
+      return true;
     },
     [currentDayNumber]
   );
 
-  // DSA & Azure Independent Track Actions
+  const updateAssessmentRubricReview = useCallback(
+    (
+      weekNumber: number,
+      selfReviews: Record<string, WrittenReviewStatus>,
+      reviewNotes?: WeeklyReviewNotes
+    ): boolean => {
+      const nowMs = Date.now();
+      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) {
+        return false;
+      }
+      const unlocked = getUnlockedAssessmentForWeek(weekNumber, nowMs);
+      if (!unlocked) return false;
+
+      let updated = false;
+      setState(prev => {
+        const existing = prev.assessmentSubmissions[weekNumber];
+        if (!existing) return prev;
+        updated = true;
+
+        const questions = existing.snapshot?.questions || unlocked.questions;
+        const recomputed = applyRubricSelfReviewToSubmission(
+          existing,
+          questions,
+          selfReviews,
+          reviewNotes,
+          unlocked.passThreshold
+        );
+
+        return {
+          ...prev,
+          assessmentSubmissions: {
+            ...prev.assessmentSubmissions,
+            [weekNumber]: recomputed
+          }
+        };
+      });
+
+      return updated;
+    },
+    []
+  );
+
+  const toggleAssessmentLeetCodeProblem = useCallback(
+    (weekNumber: number, problemId: string): boolean => {
+      const nowMs = Date.now();
+      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) {
+        return false;
+      }
+      const unlocked = getUnlockedAssessmentForWeek(weekNumber, nowMs);
+      if (!unlocked || !unlocked.leetcodeProblems.some(p => p.id === problemId)) {
+        return false;
+      }
+
+      setState(prev => {
+        const curr = prev.leetcodeProgress?.[problemId];
+        const nextCompleted = !curr?.completed;
+        return {
+          ...prev,
+          leetcodeProgress: {
+            ...(prev.leetcodeProgress || {}),
+            [problemId]: {
+              completed: nextCompleted,
+              completedAt: nextCompleted ? new Date(nowMs).toISOString() : undefined,
+              notes: curr?.notes || ''
+            }
+          }
+        };
+      });
+
+      return true;
+    },
+    []
+  );
+
+  const saveAssessmentLeetCodeNotes = useCallback(
+    (weekNumber: number, problemId: string, notes: string): boolean => {
+      const nowMs = Date.now();
+      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) {
+        return false;
+      }
+      const unlocked = getUnlockedAssessmentForWeek(weekNumber, nowMs);
+      if (!unlocked || !unlocked.leetcodeProblems.some(p => p.id === problemId)) {
+        return false;
+      }
+
+      setState(prev => {
+        const curr = prev.leetcodeProgress?.[problemId];
+        return {
+          ...prev,
+          leetcodeProgress: {
+            ...(prev.leetcodeProgress || {}),
+            [problemId]: {
+              completed: !!curr?.completed,
+              completedAt: curr?.completedAt,
+              notes
+            }
+          }
+        };
+      });
+
+      return true;
+    },
+    []
+  );
+
+  // DSA & Azure Independent Track Actions (guarded by strict real IST clock)
   const toggleTrackTaskCompletion = useCallback(
     (track: 'dsa' | 'azure', dayNum: number, taskId: string) => {
-      if (state.role === 'owner' && isPreparationLocked) return;
+      if (!isDayUnlockedByIstClock(dayNum, Date.now(), SUB_TRACK_MAX_DAYS)) return;
 
       const days = track === 'dsa' ? DSA_100_DAYS : AZURE_100_DAYS;
       const schedule = days[dayNum - 1];
@@ -824,12 +1065,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : { ...prev, azureProgress: nextTrackState };
       });
     },
-    [state.role, isPreparationLocked]
+    []
   );
 
   const saveTrackDayNotes = useCallback(
     (track: 'dsa' | 'azure', dayNum: number, notes: string) => {
-      if (state.role === 'owner' && isPreparationLocked) return;
+      if (!isDayUnlockedByIstClock(dayNum, Date.now(), SUB_TRACK_MAX_DAYS)) return;
 
       setState(prev => {
         const currentTrack = track === 'dsa' ? prev.dsaProgress : prev.azureProgress;
@@ -846,7 +1087,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : { ...prev, azureProgress: nextTrackState };
       });
     },
-    [state.role, isPreparationLocked]
+    []
   );
 
   const saveTrackRevisionRecord = useCallback(
@@ -855,7 +1096,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       weekNumber: number,
       record: Omit<TrackRevisionRecord, 'weekNumber' | 'completedAt'>
     ) => {
-      if (state.role === 'owner' && isPreparationLocked) return;
+      const weekFirstDay = Math.max(1, (weekNumber - 1) * 7 + 1);
+      if (!isDayUnlockedByIstClock(weekFirstDay, Date.now(), SUB_TRACK_MAX_DAYS)) return;
 
       const fullRecord: TrackRevisionRecord = {
         ...record,
@@ -878,10 +1120,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           : { ...prev, azureProgress: nextTrackState };
       });
     },
-    [state.role, isPreparationLocked]
+    []
   );
 
-  // Timers (with track isolation & snapshot switching)
+  // Timers (with track isolation, snapshot switching & strict real IST lock enforcement)
   const startTimer = useCallback(
     (
       dayNumber: number,
@@ -889,7 +1131,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       type: 'daily' | 'assessment' = 'daily',
       trackId: TrackId = 'main'
     ) => {
-      if (state.role === 'owner' && isPreparationLocked) return;
+      const maxDay = trackId === 'main' ? MAIN_TRACK_MAX_DAYS : SUB_TRACK_MAX_DAYS;
+      if (!isDayUnlockedByIstClock(dayNumber, Date.now(), maxDay)) return;
 
       let targetSeconds = (durationMinutes || 240) * 60;
       if (!durationMinutes) {
@@ -976,7 +1219,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       });
     },
-    [state.role, isPreparationLocked]
+    []
   );
 
   const pauseTimer = useCallback(() => {
@@ -1033,9 +1276,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
-  // PDF Management
+  // PDF Management (Owner Only)
   const uploadRoadmapPdf = useCallback(
-    async (file: File): Promise<{ success: boolean; message: string; pdfId?: string }> => {
+    async (
+      file: File
+    ): Promise<{ success: boolean; message: string; pdfId?: string; record?: RoadmapPdfRecord }> => {
       if (state.role !== 'owner') {
         return { success: false, message: 'Only Steeven (Owner) has permission to upload roadmap PDFs.' };
       }
@@ -1044,122 +1289,97 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, message: 'Invalid file type. Only PDF documents (.pdf) are allowed.' };
       }
 
-      const userId = ownerAuthUserIdRef.current;
+      return new Promise(resolve => {
+        const reader = new FileReader();
+        reader.onload = e => {
+          const dataUrl = e.target?.result as string;
+          const newId = `pdf_${Date.now()}`;
+          const newRecord: RoadmapPdfRecord = {
+            id: newId,
+            filename: file.name,
+            fileSize: file.size,
+            fileSizeBytesFormatted: `${(file.size / 1024).toFixed(1)} KB`,
+            uploadTimestamp: new Date().toISOString(),
+            ownerId: 'steeven_owner',
+            storagePath: `/uploaded_roadmaps/${file.name}`,
+            fileUrl: dataUrl,
+            version: (state.uploadedPdfs.length || 1) + 1,
+            isActiveRoadmap: false,
+            extractedSummary: {
+              pages: 20,
+              topicsCount: 180,
+              coveragePct: 100.0
+            }
+          };
 
-      if (!userId) {
-        return { success: false, message: 'Please log in again before uploading a PDF.' };
-      }
-
-      const newId = `pdf_${Date.now()}`;
-      const safeFilename = file.name.replace(/[^\w.-]+/g, '_');
-      const storagePath = `${userId}/${newId}-${safeFilename}`;
-
-      try {
-        const { error } = await supabase.storage
-          .from('roadmap-pdfs')
-          .upload(storagePath, file, {
-            contentType: 'application/pdf',
-            upsert: false,
+          setState(prev => {
+            if (prev.role !== 'owner') return prev;
+            return {
+              ...prev,
+              uploadedPdfs: [newRecord, ...prev.uploadedPdfs]
+            };
           });
 
-        if (error) throw error;
-
-        const newRecord: RoadmapPdfRecord = {
-          id: newId,
-          filename: file.name,
-          fileSize: file.size,
-          fileSizeBytesFormatted: `${(file.size / 1024).toFixed(1)} KB`,
-          uploadTimestamp: new Date().toISOString(),
-          ownerId: userId,
-          storagePath,
-          fileUrl: '',
-          version: (state.uploadedPdfs.length || 1) + 1,
-          isActiveRoadmap: false,
-          extractedSummary: {
-            pages: 20,
-            topicsCount: 180,
-            coveragePct: 100.0,
-          },
+          resolve({
+            success: true,
+            message: 'PDF uploaded and saved permanently.',
+            pdfId: newId,
+            record: newRecord
+          });
         };
 
-        setState(prev => ({
-          ...prev,
-          uploadedPdfs: [newRecord, ...prev.uploadedPdfs],
-        }));
+        reader.onerror = () => {
+          resolve({ success: false, message: 'Failed to read file contents.' });
+        };
 
-        return {
-          success: true,
-          message: 'PDF uploaded successfully to secure cloud storage.',
-          pdfId: newId,
-        };
-      } catch (error) {
-        console.error('Roadmap PDF upload failed:', error);
-        return {
-          success: false,
-          message: error instanceof Error ? error.message : 'PDF upload failed. Please try again.',
-        };
-      }
+        reader.readAsDataURL(file);
+      });
     },
     [state.role, state.uploadedPdfs]
   );
+
   const setActivePdf = useCallback(
     (pdfId: string) => {
       if (state.role !== 'owner') return;
 
-      setState(prev => ({
-        ...prev,
-        activePdfId: pdfId,
-        uploadedPdfs: prev.uploadedPdfs.map(p => ({
-          ...p,
-          isActiveRoadmap: p.id === pdfId
-        }))
-      }));
+      setState(prev => {
+        if (prev.role !== 'owner') return prev;
+        return {
+          ...prev,
+          activePdfId: pdfId,
+          uploadedPdfs: prev.uploadedPdfs.map(p => ({
+            ...p,
+            isActiveRoadmap: p.id === pdfId
+          }))
+        };
+      });
     },
     [state.role]
   );
 
   const deletePdf = useCallback(
-    async (pdfId: string): Promise<boolean> => {
+    (pdfId: string): boolean => {
       if (state.role !== 'owner') return false;
 
-      const pdfToDelete = state.uploadedPdfs.find(p => p.id === pdfId);
+      if (state.uploadedPdfs.length <= 1) return false;
 
-      if (!pdfToDelete || state.uploadedPdfs.length <= 1) {
-        return false;
-      }
+      setState(prev => {
+        if (prev.role !== 'owner' || prev.uploadedPdfs.length <= 1) return prev;
+        const updated = prev.uploadedPdfs.filter(p => p.id !== pdfId);
+        const nextActiveId = prev.activePdfId === pdfId ? updated[0].id : prev.activePdfId;
 
-      try {
-        if (
-          pdfToDelete.storagePath &&
-          !pdfToDelete.storagePath.startsWith('/') &&
-          pdfToDelete.storagePath.includes('/')
-        ) {
-          await deleteRoadmapPdfFromStorage(pdfToDelete.storagePath);
-        }
-
-        setState(prev => {
-          const updated = prev.uploadedPdfs.filter(p => p.id !== pdfId);
-
-          if (updated.length === prev.uploadedPdfs.length || updated.length === 0) {
-            return prev;
-          }
-
-          return {
-            ...prev,
-            uploadedPdfs: updated,
-            activePdfId: prev.activePdfId === pdfId
-              ? updated[0].id
-              : prev.activePdfId,
-          };
-        });
-
-        return true;
-      } catch (error) {
-        console.error('PDF deletion failed:', error);
-        return false;
-      }
+        return {
+          ...prev,
+          uploadedPdfs: updated.map(p => ({
+            ...p,
+            isActiveRoadmap: p.id === nextActiveId
+          })),
+          activePdfId: nextActiveId
+        };
+      });
+      return true;
     },
-    [state.role, state.uploadedPdfs]
+    [state.role, state.uploadedPdfs.length]
   );
 
   // Backup & Reset
@@ -1183,6 +1403,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [state.role]
   );
 
+  const resetGuestPreview = useCallback(() => {
+    const resetGuest = resetGuestPreviewState();
+    setState(resetGuest);
+    setSelectedDayNumberState(1);
+    setSelectedDsaDayState(1);
+    setSelectedAzureDayState(1);
+  }, []);
+
   const resetAllData = useCallback(() => {
     if (state.role === 'owner') {
       const resetState = hydrateUserState({ ...DEFAULT_OWNER_STATE, isAuthenticated: true }, 'owner');
@@ -1192,41 +1420,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setSelectedDsaDayState(1);
       setSelectedAzureDayState(1);
     } else {
-      const resetGuest = hydrateUserState({ ...DEFAULT_GUEST_STATE, isAuthenticated: true }, 'guest');
-      setState(resetGuest);
-      saveRoleStatePermanent(resetGuest);
-      setSelectedDayNumberState(1);
-      setSelectedDsaDayState(1);
-      setSelectedAzureDayState(1);
+      resetGuestPreview();
     }
-  }, [state.role]);
-
-  const resetGuestPreview = useCallback(() => {
-    const resetGuest = hydrateUserState({ ...DEFAULT_GUEST_STATE, isAuthenticated: true }, 'guest');
-    setState(resetGuest);
-    saveRoleStatePermanent(resetGuest);
-    setSelectedDayNumberState(1);
-    setSelectedDsaDayState(1);
-    setSelectedAzureDayState(1);
-  }, []);
+  }, [state.role, resetGuestPreview]);
 
   const setSimulationMode = useCallback(
     (enabled: boolean, isoDate?: string) => {
       if (state.role !== 'owner') return;
-      setState(prev => ({
-        ...prev,
-        simulationEnabled: enabled,
-        simulationDate: enabled ? isoDate || '2026-11-16T09:00:00+05:30' : null
-      }));
+      setTestModeEnabled(enabled);
+      setTestModeDate(enabled ? isoDate || '2026-11-16T09:00:00+05:30' : null);
+    },
+    [state.role]
+  );
+
+  const updateSharedSettings = useCallback(
+    (updates: Partial<SharedAppSettings>): boolean => {
+      if (state.role !== 'owner') return false;
+      setState(prev => {
+        if (prev.role !== 'owner') return prev;
+        return {
+          ...prev,
+          sharedSettings: {
+            ...prev.sharedSettings,
+            ...updates,
+            updatedAt: new Date().toISOString()
+          }
+        };
+      });
+      return true;
     },
     [state.role]
   );
 
   // ==========================================
-  // RESOURCE LIBRARY ACTIONS
+  // RESOURCE LIBRARY ACTIONS (OWNER ONLY MUTATIONS)
   // ==========================================
   const addResource = useCallback(
     (item: Omit<ResourceItem, 'id' | 'dateAdded'>): { success: boolean; message: string; id?: string } => {
+      if (state.role !== 'owner') {
+        return {
+          success: false,
+          message: 'Read-only in Guest mode: only Steeven (Owner) can modify the Resource Library.'
+        };
+      }
+
       let validUrl = item.url.trim();
       if (!validUrl) {
         return { success: false, message: 'Resource URL is required.' };
@@ -1254,63 +1491,104 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         dateAdded: new Date().toISOString()
       };
 
-      setState(prev => ({
-        ...prev,
-        resources: [newResource, ...(prev.resources || [])]
-      }));
+      setState(prev => {
+        if (prev.role !== 'owner') return prev;
+        return {
+          ...prev,
+          resources: [newResource, ...(prev.resources || [])]
+        };
+      });
 
       return { success: true, message: 'Resource saved successfully.', id: newId };
     },
-    [state.resources]
+    [state.role, state.resources]
   );
 
-  const updateResource = useCallback((id: string, updates: Partial<ResourceItem>): boolean => {
-    let success = false;
-    setState(prev => {
-      const list = prev.resources || [];
-      const updated = list.map(r => {
-        if (r.id === id) {
-          success = true;
-          return { ...r, ...updates };
-        }
-        return r;
+  const updateResource = useCallback(
+    (id: string, updates: Partial<ResourceItem>): boolean => {
+      if (state.role !== 'owner') return false;
+      const exists = (state.resources || []).some(r => r.id === id);
+      if (!exists) return false;
+
+      setState(prev => {
+        if (prev.role !== 'owner') return prev;
+        const list = prev.resources || [];
+        return {
+          ...prev,
+          resources: list.map(r => (r.id === id ? { ...r, ...updates } : r))
+        };
       });
-      return { ...prev, resources: updated };
-    });
-    return success;
-  }, []);
+      return true;
+    },
+    [state.role, state.resources]
+  );
 
-  const deleteResource = useCallback((id: string): boolean => {
-    let success = false;
-    setState(prev => {
-      const list = prev.resources || [];
-      const updated = list.filter(r => r.id !== id);
-      success = updated.length !== list.length;
-      return { ...prev, resources: updated };
-    });
-    return success;
-  }, []);
+  const deleteResource = useCallback(
+    (id: string): boolean => {
+      if (state.role !== 'owner') return false;
+      const exists = (state.resources || []).some(r => r.id === id);
+      if (!exists) return false;
 
-  const toggleResourceImportant = useCallback((id: string) => {
-    setState(prev => ({
-      ...prev,
-      resources: (prev.resources || []).map(r => (r.id === id ? { ...r, isImportant: !r.isImportant } : r))
-    }));
-  }, []);
+      setState(prev => {
+        if (prev.role !== 'owner') return prev;
+        const list = prev.resources || [];
+        return {
+          ...prev,
+          resources: list.filter(r => r.id !== id)
+        };
+      });
+      return true;
+    },
+    [state.role, state.resources]
+  );
 
-  const toggleResourceCompleted = useCallback((id: string) => {
-    setState(prev => ({
-      ...prev,
-      resources: (prev.resources || []).map(r => (r.id === id ? { ...r, isCompleted: !r.isCompleted } : r))
-    }));
-  }, []);
+  const toggleResourceImportant = useCallback(
+    (id: string) => {
+      if (state.role !== 'owner') return;
+      setState(prev => {
+        if (prev.role !== 'owner') return prev;
+        return {
+          ...prev,
+          resources: (prev.resources || []).map(r =>
+            r.id === id ? { ...r, isImportant: !r.isImportant } : r
+          )
+        };
+      });
+    },
+    [state.role]
+  );
 
-  const saveResourceNotes = useCallback((id: string, notes: string) => {
-    setState(prev => ({
-      ...prev,
-      resources: (prev.resources || []).map(r => (r.id === id ? { ...r, personalNotes: notes } : r))
-    }));
-  }, []);
+  const toggleResourceCompleted = useCallback(
+    (id: string) => {
+      if (state.role !== 'owner') return;
+      setState(prev => {
+        if (prev.role !== 'owner') return prev;
+        return {
+          ...prev,
+          resources: (prev.resources || []).map(r =>
+            r.id === id ? { ...r, isCompleted: !r.isCompleted } : r
+          )
+        };
+      });
+    },
+    [state.role]
+  );
+
+  const saveResourceNotes = useCallback(
+    (id: string, notes: string) => {
+      if (state.role !== 'owner') return;
+      setState(prev => {
+        if (prev.role !== 'owner') return prev;
+        return {
+          ...prev,
+          resources: (prev.resources || []).map(r =>
+            r.id === id ? { ...r, personalNotes: notes } : r
+          )
+        };
+      });
+    },
+    [state.role]
+  );
 
   // ==========================================
   // DOUBT & ERROR NOTEBOOK ACTIONS
@@ -1400,12 +1678,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setSelectedAzureDay,
       openDayForTrack,
       saveStatus,
+      nowTimestamp,
       isPreparationLocked,
       lockTimeRemaining,
       currentDayNumber,
       currentTrackDayNumber,
       currentDaySchedule,
       isSaturdayToday,
+      isDayUnlocked,
+      isTrackDayUnlocked,
       getDayStatus,
       getDayTaskCompletion,
       getTrackDayStatus,
@@ -1416,6 +1697,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       toggleTaskCompletion,
       saveDayNotes,
       submitAssessment,
+      isAssessmentWeekUnlocked,
+      startAssessmentAttempt,
+      saveAssessmentDraftAnswer,
+      updateAssessmentAttemptElapsed,
+      cancelAssessmentAttempt,
+      updateAssessmentRubricReview,
+      toggleAssessmentLeetCodeProblem,
+      saveAssessmentLeetCodeNotes,
       toggleTrackTaskCompletion,
       saveTrackDayNotes,
       saveTrackRevisionRecord,
@@ -1433,6 +1722,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       toggleResourceImportant,
       toggleResourceCompleted,
       saveResourceNotes,
+      updateSharedSettings,
+      refreshSharedContent,
       addDoubtEntry,
       updateDoubtEntry,
       deleteDoubtEntry,
@@ -1443,6 +1734,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       importBackup,
       resetAllData,
       resetGuestPreview,
+      testModeEnabled,
+      testModeDate,
       setSimulationMode
     }),
     [
@@ -1456,12 +1749,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setSelectedAzureDay,
       openDayForTrack,
       saveStatus,
+      nowTimestamp,
       isPreparationLocked,
       lockTimeRemaining,
       currentDayNumber,
       currentTrackDayNumber,
       currentDaySchedule,
       isSaturdayToday,
+      isDayUnlocked,
+      isTrackDayUnlocked,
       getDayStatus,
       getDayTaskCompletion,
       getTrackDayStatus,
@@ -1472,6 +1768,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       toggleTaskCompletion,
       saveDayNotes,
       submitAssessment,
+      isAssessmentWeekUnlocked,
+      startAssessmentAttempt,
+      saveAssessmentDraftAnswer,
+      updateAssessmentAttemptElapsed,
+      cancelAssessmentAttempt,
+      updateAssessmentRubricReview,
+      toggleAssessmentLeetCodeProblem,
+      saveAssessmentLeetCodeNotes,
       toggleTrackTaskCompletion,
       saveTrackDayNotes,
       saveTrackRevisionRecord,
@@ -1488,6 +1792,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       toggleResourceImportant,
       toggleResourceCompleted,
       saveResourceNotes,
+      updateSharedSettings,
+      refreshSharedContent,
       addDoubtEntry,
       updateDoubtEntry,
       deleteDoubtEntry,
@@ -1498,6 +1804,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       importBackup,
       resetAllData,
       resetGuestPreview,
+      testModeEnabled,
+      testModeDate,
       setSimulationMode
     ]
   );
@@ -1512,12 +1820,3 @@ export function useApp() {
   }
   return context;
 }
-
-
-
-
-
-
-
-
-

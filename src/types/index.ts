@@ -76,9 +76,15 @@ export interface TrackProgressState {
   lastActiveDayNumber: number;
 }
 
+export type AssessmentDomain = 'python' | 'genai' | 'ml' | 'rag' | 'azure' | 'dsa';
+export type QuestionEvaluationMode = 'auto_mcq' | 'self_reported_coding' | 'rubric_review';
+export type WrittenReviewStatus = 'pending' | 'needs_revision' | 'partial' | 'full';
+
 export interface Question {
   id: string;
-  type: 'mcq' | 'short_answer' | 'debugging' | 'architecture';
+  type: 'mcq' | 'short_answer' | 'debugging' | 'architecture' | 'coding';
+  domain?: AssessmentDomain;
+  evaluationMode?: QuestionEvaluationMode;
   prompt: string;
   codeSnippet?: string;
   options?: string[];
@@ -87,17 +93,71 @@ export interface Question {
   points: number;
 }
 
+export interface LeetCodeProblem {
+  id: string;
+  weekNumber: number;
+  frontendId: string;
+  title: string;
+  slug: string;
+  url: string;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  dsaTopic: string;
+}
+
 export interface Assessment {
   weekNumber: number;
   title: string;
   moduleTitle: string;
-  scheduledDayNumber: number; // Saturday day number
+  scheduledDayNumber: number; // Saturday day number (or Day 180 for Week 26)
   scheduledDate: string;
+  unlockIsoIst: string; // Explicit Asia/Kolkata ISO timestamp e.g. 2026-11-21T00:00:00+05:30
+  studyWindow: string;
   durationMinutes: number; // 180 (3 hours)
   topicsCovered: string[];
+  dsaTopics: string[];
+  azureTopics: string[];
   questions: Question[];
+  leetcodeProblems: LeetCodeProblem[];
   totalPoints: number;
   passThreshold: number; // 70%
+}
+
+export interface AssessmentMetadataSummary {
+  weekNumber: number;
+  title: string;
+  moduleTitle: string;
+  scheduledDayNumber: number;
+  scheduledDate: string;
+  unlockIsoIst: string;
+  studyWindow: string;
+  durationMinutes: number;
+  topicsCovered: string[];
+  dsaTopics: string[];
+  azureTopics: string[];
+  totalPoints: number;
+  passThreshold: number;
+  questionBreakdown: {
+    mcqCount: number;
+    codingCount: number;
+    writtenCount: number;
+    leetcodeCount: number;
+  };
+}
+
+export interface WeeklyReviewNotes {
+  strengths: string;
+  weakTopics: string;
+  mistakes: string;
+  revisionActions: string;
+  nextWeekRecommendations: string;
+}
+
+export interface AssessmentSnapshot {
+  title: string;
+  moduleTitle: string;
+  scheduledDate: string;
+  questions: Question[];
+  leetcodeProblems: LeetCodeProblem[];
 }
 
 export interface AssessmentSubmission {
@@ -110,6 +170,28 @@ export interface AssessmentSubmission {
   submittedAt: string;
   timeSpentSeconds: number;
   feedback?: string;
+  mcqScore?: number;
+  mcqMaxScore?: number;
+  writtenReviewScore?: number;
+  writtenMaxScore?: number;
+  writtenSelfReviews?: Record<string, WrittenReviewStatus>;
+  reviewNotes?: WeeklyReviewNotes;
+  snapshot?: AssessmentSnapshot;
+}
+
+export interface LeetCodeProgressEntry {
+  completed: boolean;
+  completedAt?: string;
+  notes?: string;
+}
+
+export interface ActiveAssessmentAttempt {
+  weekNumber: number;
+  startedAt: string;
+  lastUpdatedAt: string;
+  answers: Record<string, string | number>;
+  elapsedSeconds: number;
+  snapshot: AssessmentSnapshot;
 }
 
 export interface StudySessionLog {
@@ -157,6 +239,25 @@ export interface RoadmapPdfRecord {
   };
 }
 
+export interface SharedAppSettings {
+  preparationTitle: string;
+  timezoneLabel: string;
+  studyScheduleBannerNote: string;
+  preferredTrackOrder: TrackId[];
+  showWeekendRevisionGuidance: boolean;
+  defaultDailyGoalHours: number;
+  resourceLibraryNotice: string;
+  updatedAt: string;
+}
+
+export interface SharedOwnerContent {
+  uploadedPdfs: RoadmapPdfRecord[];
+  activePdfId: string;
+  resources: ResourceItem[];
+  sharedSettings: SharedAppSettings;
+  updatedAt: string;
+}
+
 export interface UserState {
   username: string;
   passwordHash: string; // Stored securely
@@ -167,6 +268,8 @@ export interface UserState {
   dayNotes: Record<number, string>; // dayNumber -> personal study notes (Main 180-day plan)
   studyTimeSeconds: Record<number, number>; // dayNumber -> seconds studied (Main 180-day plan)
   assessmentSubmissions: Record<number, AssessmentSubmission>; // weekNumber -> submission (Main 180-day plan)
+  leetcodeProgress: Record<string, LeetCodeProgressEntry>; // problemId -> user-confirmed completion
+  activeAssessmentAttempt?: ActiveAssessmentAttempt | null;
   studyLogs: StudySessionLog[];
   timerState: TimerState;
   trackTimerSnapshots?: Partial<Record<TrackId, TimerState>>;
@@ -180,6 +283,7 @@ export interface UserState {
   lastSavedTimestamp?: string;
   resources: ResourceItem[];
   doubtEntries: DoubtEntry[];
+  sharedSettings: SharedAppSettings;
 }
 
 export type SaveStatus = 'saved' | 'saving' | 'error';
