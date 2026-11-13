@@ -80,7 +80,7 @@ export const Navigation: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#E7826D] animate-pulse" />
             <span className="font-semibold text-[#F3EFE6]">
-              GUEST PREVIEW MODE â€” Changes are temporary and will not affect Steeven's preparation.
+              GUEST PREVIEW MODE - Changes are temporary and will not affect Steeven's preparation.
             </span>
           </div>
           <button
@@ -187,7 +187,7 @@ export const Navigation: React.FC = () => {
             {isOwner ? (
               <span className="font-semibold text-[#F3EFE6] whitespace-nowrap">Steeven - Owner</span>
             ) : (
-              <span className="font-semibold text-[#E7826D] whitespace-nowrap">Guest â€” Preview</span>
+              <span className="font-semibold text-[#E7826D] whitespace-nowrap">Guest - Preview</span>
             )}
           </div>
 
@@ -276,6 +276,7 @@ export const Navigation: React.FC = () => {
     </header>
   );
 };
+
 
 
 

@@ -66,7 +66,7 @@ export const LoginScreen: React.FC = () => {
             STEEVEN'S 180-DAY PREPARATION TRACKER
           </h1>
           <p className="text-xs text-[#5A5650] max-w-sm mx-auto">
-            End-to-End Production RAG Learning System Â· 16 Nov 2026 â€“ 14 May 2027
+            End-to-End Production RAG Learning System | 16 Nov 2026 - 14 May 2027
           </p>
         </div>
 
@@ -190,10 +190,11 @@ export const LoginScreen: React.FC = () => {
 
         {/* Minimal Footer */}
         <div className="text-center text-xs text-[#736E65]">
-          <span>Protected Personal Preparation Environment Â· Asia/Kolkata</span>
+          <span>Protected Personal Preparation Environment | Asia/Kolkata</span>
         </div>
       </div>
     </div>
   );
 };
+
 

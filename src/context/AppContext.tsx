@@ -362,7 +362,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [state.isAuthenticated, state.role, isPreparationLocked, currentPage]);
 
-  // Timer engine â€” completely isolated per trackId
+  // Timer engine - completely isolated per trackId
   useEffect(() => {
     if (!state.timerState.isActive || state.timerState.isPaused) return;
 
@@ -1512,6 +1512,7 @@ export function useApp() {
   }
   return context;
 }
+
 
 
 

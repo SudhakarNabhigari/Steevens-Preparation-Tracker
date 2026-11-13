@@ -202,7 +202,7 @@ export const RoadmapPdfPage: React.FC = () => {
         ) : (
           <div className="px-3 py-1.5 rounded-xl bg-white border border-[#E0DCD3] text-[#78716C] text-xs font-semibold flex items-center gap-2 shadow-sm">
             <Eye className="w-3.5 h-3.5 text-[#E7826D]" />
-            <span>Guest Preview Mode Â· Read Only</span>
+            <span>Guest Preview Mode | Read Only</span>
           </div>
         )}
       </div>
@@ -321,13 +321,13 @@ export const RoadmapPdfPage: React.FC = () => {
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[#78716C]">
                       <span>Size: <strong className="font-mono text-[#292929]">{pdf.fileSizeBytesFormatted}</strong></span>
-                      <span>Â·</span>
+                      <span>|</span>
                       <span>Uploaded: <strong className="text-[#292929]">{new Date(pdf.uploadTimestamp).toLocaleDateString('en-US', { dateStyle: 'medium' })}</strong></span>
-                      <span>Â·</span>
+                      <span>|</span>
                       <span>Version: <strong className="font-mono text-[#292929]">v{pdf.version}</strong></span>
                       {pdf.extractedSummary && (
                         <>
-                          <span>Â·</span>
+                          <span>|</span>
                           <span className="text-[#16A34A] font-mono font-bold">{pdf.extractedSummary.coveragePct}% Content Coverage</span>
                         </>
                       )}
@@ -520,5 +520,6 @@ export const RoadmapPdfPage: React.FC = () => {
     </div>
   );
 };
+
 
 
