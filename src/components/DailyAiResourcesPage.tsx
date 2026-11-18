@@ -24,8 +24,21 @@ import {
   Clock,
   Send,
   Layers,
-  ShieldCheck
+  ShieldCheck,
+  Eye,
+  X,
+  AlertTriangle,
+  Lightbulb
 } from 'lucide-react';
+
+function isSafeHttpsUrl(url?: string): boolean {
+  if (!url) return false;
+  try {
+    return new URL(url).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 export const DailyAiResourcesPage: React.FC = () => {
   const {
@@ -65,6 +78,16 @@ export const DailyAiResourcesPage: React.FC = () => {
   const [runningAutomation, setRunningAutomation] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [automationFeedback, setAutomationFeedback] = useState<string | null>(null);
+  const [emailPreviewOpen, setEmailPreviewOpen] = useState<boolean>(false);
+  const [emailPreviewMode, setEmailPreviewMode] = useState<TrackId | 'combined'>('main');
+  const [emailPreviewLoading, setEmailPreviewLoading] = useState<boolean>(false);
+  const [emailPreviewData, setEmailPreviewData] = useState<{
+    subject: string;
+    html: string;
+    text: string;
+    appUrl: string;
+  } | null>(null);
+  const [emailPreviewError, setEmailPreviewError] = useState<string | null>(null);
 
   useEffect(() => {
     if (aiResourcesTarget) {
@@ -194,6 +217,38 @@ export const DailyAiResourcesPage: React.FC = () => {
       setErrorMessage(err instanceof Error ? err.message : 'Daily automation failed.');
     } finally {
       setRunningAutomation(false);
+    }
+  };
+
+  const handleOpenEmailPreview = async (modeOverride?: TrackId | 'combined') => {
+    const targetMode = modeOverride ?? activeTrack;
+    setEmailPreviewMode(targetMode);
+    setEmailPreviewOpen(true);
+    setEmailPreviewLoading(true);
+    setEmailPreviewError(null);
+
+    try {
+      const query =
+        targetMode === 'combined'
+          ? '/api/daily-resources/email-preview?track=combined'
+          : `/api/daily-resources/email-preview?track=${targetMode}&day=${selectedDays[targetMode]}`;
+      const resp = await fetch(query);
+      const json = await resp.json();
+      if (!resp.ok || !json.html) {
+        throw new Error(json.error || `Preview failed (HTTP ${resp.status})`);
+      }
+      setEmailPreviewData({
+        subject: json.subject,
+        html: json.html,
+        text: json.text,
+        appUrl: json.appUrl
+      });
+    } catch (err) {
+      setEmailPreviewError(
+        err instanceof Error ? err.message : 'Unable to generate read-only email preview.'
+      );
+    } finally {
+      setEmailPreviewLoading(false);
     }
   };
 
@@ -350,7 +405,15 @@ export const DailyAiResourcesPage: React.FC = () => {
             </button>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => handleOpenEmailPreview(activeTrack)}
+              disabled={!isSelectedDayUnlocked}
+              className="px-3 py-1.5 rounded-lg bg-[#FAF8F5] hover:bg-white border border-[#E0DCD3] disabled:opacity-40 text-xs font-semibold text-[#292929] flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <Eye className="w-3.5 h-3.5 text-[#E7826D]" />
+              <span>Preview Email</span>
+            </button>
             {userRole === 'owner' ? (
               <button
                 onClick={handleManualRefreshTrack}
@@ -419,6 +482,19 @@ export const DailyAiResourcesPage: React.FC = () => {
               <div>
                 <div className="font-bold">Could not fetch latest resources</div>
                 <div className="text-xs mt-0.5">{errorMessage}</div>
+              </div>
+            </div>
+          )}
+
+          {currentTrackData?.aiProviderStatus === 'invalid_api_key' && (
+            <div className="bg-amber-50 border border-amber-300 rounded-xl p-4 flex items-start gap-3 text-xs text-amber-900">
+              <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold">Gemini API Key Invalid or Disabled</div>
+                <div className="mt-0.5">
+                  Check <code className="font-mono font-semibold">PREPARATION_GEMINI_KEY</code> in{' '}
+                  <strong>Settings &gt; Secrets</strong>. Grounded syllabus topics, timetable, docs, and LeetCode items remain active below.
+                </div>
               </div>
             </div>
           )}
@@ -493,6 +569,98 @@ export const DailyAiResourcesPage: React.FC = () => {
                     </span>
                     {currentTrackData.dailyGuidance}
                   </div>
+
+                  {/* Actual Schedule Target & Study Timetable */}
+                  {(currentTrackData.scheduleTarget ||
+                    (currentTrackData.studyTimetable && currentTrackData.studyTimetable.length > 0)) && (
+                    <div className="bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl p-4 space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <h3 className="text-xs font-bold uppercase tracking-wider text-[#292929] flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-[#E7826D]" />
+                          <span>Today&apos;s Study Plan</span>
+                        </h3>
+                        {currentTrackData.scheduleTarget && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-[#292929] text-[#F3EFE6] text-[11px] font-bold">
+                            Target: {currentTrackData.scheduleTarget}
+                          </span>
+                        )}
+                      </div>
+                      {currentTrackData.studyTimetable && currentTrackData.studyTimetable.length > 0 && (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          {currentTrackData.studyTimetable.map((slot, idx) => (
+                            <div
+                              key={idx}
+                              className="bg-white border border-[#E0DCD3] rounded-lg px-3 py-2 flex items-start gap-2"
+                            >
+                              <span className="px-2 py-0.5 rounded bg-[#E7826D]/15 text-[#9A3412] font-mono text-[10px] font-bold shrink-0">
+                                {slot.duration}
+                              </span>
+                              <span className="text-xs text-[#292929] font-medium leading-snug">
+                                {slot.activity}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Practical Examples, Revision Notes & Common Mistakes */}
+                  {((currentTrackData.practicalExamples && currentTrackData.practicalExamples.length > 0) ||
+                    (currentTrackData.revisionNotes && currentTrackData.revisionNotes.length > 0) ||
+                    (currentTrackData.commonMistakes && currentTrackData.commonMistakes.length > 0)) && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {currentTrackData.practicalExamples && currentTrackData.practicalExamples.length > 0 && (
+                        <div className="bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl p-4 space-y-2">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-[#292929] flex items-center gap-1.5">
+                            <Lightbulb className="w-3.5 h-3.5 text-[#E7826D]" />
+                            <span>Practical Examples</span>
+                          </h3>
+                          <ul className="space-y-1.5 text-xs text-[#57534E]">
+                            {currentTrackData.practicalExamples.map((ex, idx) => (
+                              <li key={idx} className="flex items-start gap-1.5">
+                                <span className="text-[#E7826D] font-bold">•</span>
+                                <span>{ex}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {currentTrackData.revisionNotes && currentTrackData.revisionNotes.length > 0 && (
+                        <div className="bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl p-4 space-y-2">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-[#292929]">
+                            Key Takeaways &amp; Revision
+                          </h3>
+                          <ul className="space-y-1.5 text-xs text-[#57534E]">
+                            {currentTrackData.revisionNotes.map((note, idx) => (
+                              <li key={idx} className="flex items-start gap-1.5">
+                                <span className="text-emerald-600 font-bold">✓</span>
+                                <span>{note}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {currentTrackData.commonMistakes && currentTrackData.commonMistakes.length > 0 && (
+                        <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-4 space-y-2">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-amber-900 flex items-center gap-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                            <span>Common Mistakes to Avoid</span>
+                          </h3>
+                          <ul className="space-y-1.5 text-xs text-amber-900/90">
+                            {currentTrackData.commonMistakes.map((mistake, idx) => (
+                              <li key={idx} className="flex items-start gap-1.5">
+                                <span className="font-bold">!</span>
+                                <span>{mistake}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </section>
 
                 {/* SECTION B: YOUTUBE TUTORIALS */}
@@ -528,6 +696,21 @@ export const DailyAiResourcesPage: React.FC = () => {
                           }`}
                         >
                           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                            {yt.isVerifiedVideo && isSafeHttpsUrl(yt.thumbnailUrl) && (
+                              <a
+                                href={yt.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="shrink-0 block w-full sm:w-44 overflow-hidden rounded-lg border border-[#E0DCD3] bg-black"
+                              >
+                                <img
+                                  src={yt.thumbnailUrl}
+                                  alt={yt.title}
+                                  loading="lazy"
+                                  className="w-full h-24 object-cover"
+                                />
+                              </a>
+                            )}
                             <div className="space-y-1.5 flex-1">
                               <div className="flex flex-wrap items-center gap-2">
                                 <h3 className="text-sm font-bold text-[#292929]">{yt.title}</h3>
@@ -906,7 +1089,7 @@ export const DailyAiResourcesPage: React.FC = () => {
             <div className="bg-[#1F1F1F] border border-[#3D3D3D] rounded-lg p-2.5">
               <div className="text-[#A8A49C] text-[10px] uppercase">Gemini Free Tier</div>
               <div className="font-semibold mt-0.5">
-                {dashboard.automation.geminiConfigured ? 'Configured (gemini-4-hydrogen)' : 'Awaiting GEMINI_API_KEY'}
+                {dashboard.automation.geminiConfigured ? 'Configured (gemini-4-hydrogen)' : 'Awaiting PREPARATION_GEMINI_KEY'}
               </div>
             </div>
             <div className="bg-[#1F1F1F] border border-[#3D3D3D] rounded-lg p-2.5">
@@ -935,6 +1118,70 @@ export const DailyAiResourcesPage: React.FC = () => {
             </div>
           )}
         </section>
+      )}
+
+      {/* Safe Read-Only Daily Email Preview Modal (Never Sends Emails) */}
+      {emailPreviewOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Daily Email Report Preview"
+        >
+          <div className="bg-[#F3EFE6] border border-[#E0DCD3] rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="bg-[#292929] text-[#F3EFE6] px-5 py-3.5 flex flex-wrap items-center justify-between gap-3 border-b-2 border-[#E7826D]">
+              <div>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[#E7826D]">
+                  Read-Only Preview · No Email Sent
+                </div>
+                <div className="text-sm font-bold truncate max-w-xl">
+                  {emailPreviewData?.subject || 'Loading Daily Email Preview...'}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {(['main', 'dsa', 'azure', 'combined'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    onClick={() => handleOpenEmailPreview(mode)}
+                    className={`px-2.5 py-1 rounded-md text-xs font-bold cursor-pointer transition-colors ${
+                      emailPreviewMode === mode
+                        ? 'bg-[#E7826D] text-[#292929]'
+                        : 'bg-[#3A3A3A] text-[#F3EFE6] hover:bg-[#4A4A4A]'
+                    }`}
+                  >
+                    {mode === 'combined' ? 'All 3 Tracks' : mode.toUpperCase()}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setEmailPreviewOpen(false)}
+                  aria-label="Close email preview"
+                  className="ml-1 p-1.5 rounded-lg bg-[#3A3A3A] hover:bg-[#4A4A4A] text-[#F3EFE6] cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto p-3 sm:p-4 bg-[#FAF8F5]">
+              {emailPreviewLoading ? (
+                <div className="py-16 text-center text-sm text-[#78716C]">
+                  Rendering HTML email template preview...
+                </div>
+              ) : emailPreviewError ? (
+                <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 text-xs text-rose-800">
+                  {emailPreviewError}
+                </div>
+              ) : emailPreviewData ? (
+                <iframe
+                  title="Daily Email HTML Preview"
+                  srcDoc={emailPreviewData.html}
+                  sandbox="allow-popups allow-popups-to-escape-sandbox"
+                  className="w-full h-[68vh] rounded-xl border border-[#E0DCD3] bg-[#F3EFE6]"
+                />
+              ) : null}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

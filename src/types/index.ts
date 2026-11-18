@@ -375,6 +375,7 @@ export interface DailyYouTubeResource {
   channelName: string;
   url: string;
   videoId?: string;
+  thumbnailUrl?: string;
   topicCovered: string;
   explanation: string;
   whyUseful: string;
@@ -408,16 +409,27 @@ export interface DailyReferenceLink {
   isVerifiedUrl: boolean;
 }
 
+export interface DailyTimetableSlot {
+  duration: string;
+  activity: string;
+}
+
 export interface TrackDailyAiResources {
   trackId: TrackId;
   trackLabel: string;
   planDay: number;
   planDate: string;
   dateLabel: string;
+  dayOfWeek?: string;
   topicTitle: string;
   phaseOrModule: string;
+  scheduleTarget?: string;
+  studyTimetable?: DailyTimetableSlot[];
   learningObjectives: string[];
   topicExplanation: string;
+  practicalExamples?: string[];
+  revisionNotes?: string[];
+  commonMistakes?: string[];
   suggestedLearningOrder: string[];
   dailyGuidance: string;
   practicalExerciseSummary: string;
@@ -427,7 +439,12 @@ export interface TrackDailyAiResources {
   practicalExercises: DailyReferenceLink[];
   status: DailyResourceStatus;
   statusMessage: string;
-  aiProviderStatus: 'gemini_generated' | 'quota_exhausted_cached' | 'missing_api_key' | 'unavailable';
+  aiProviderStatus:
+    | 'gemini_generated'
+    | 'quota_exhausted_cached'
+    | 'missing_api_key'
+    | 'invalid_api_key'
+    | 'unavailable';
   youtubeProviderStatus: 'youtube_api_verified' | 'search_fallback_no_key' | 'search_fallback_quota' | 'unavailable';
   modelUsed?: string;
   generatedAt: string;

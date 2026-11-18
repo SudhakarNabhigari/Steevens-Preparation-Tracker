@@ -689,14 +689,15 @@ function mergeTrackProgressSafely(
   const newerTasks = localIsNewer ? localTrack.completedTasks : cloudTrack.completedTasks || {};
   const mergedTasks: Record<string, boolean> = { ...olderTasks, ...newerTasks };
   for (const [k, v] of Object.entries(olderTasks)) {
-    if (v) mergedTasks[k] = true;
+    if (v && newerTasks[k] === undefined) mergedTasks[k] = true;
   }
 
   const olderDays = localIsNewer ? cloudTrack.completedDays || {} : localTrack.completedDays;
   const newerDays = localIsNewer ? localTrack.completedDays : cloudTrack.completedDays || {};
   const mergedDays: Record<number, boolean> = { ...olderDays, ...newerDays };
   for (const [k, v] of Object.entries(olderDays)) {
-    if (v) mergedDays[Number(k)] = true;
+    const day = Number(k);
+    if (v && newerDays[day] === undefined) mergedDays[day] = true;
   }
 
   const mergedNotes: Record<number, string> = {
@@ -781,13 +782,13 @@ export function mergeOwnerStatesSafely(
   const primary = localIsNewer ? cleanLocal : cleanCloud;
   const secondary = localIsNewer ? cleanCloud : cleanLocal;
 
-  // Main Plan union merge
+  // Main Plan merge: preserve explicit unmarks from newer primary, backfill untouched completions from secondary
   const completedTasks: Record<string, boolean> = {
     ...secondary.completedTasks,
     ...primary.completedTasks
   };
   for (const [k, v] of Object.entries(secondary.completedTasks)) {
-    if (v) completedTasks[k] = true;
+    if (v && primary.completedTasks[k] === undefined) completedTasks[k] = true;
   }
 
   const completedDays: Record<number, boolean> = {
@@ -795,7 +796,8 @@ export function mergeOwnerStatesSafely(
     ...primary.completedDays
   };
   for (const [k, v] of Object.entries(secondary.completedDays)) {
-    if (v) completedDays[Number(k)] = true;
+    const day = Number(k);
+    if (v && primary.completedDays[day] === undefined) completedDays[day] = true;
   }
 
   const dayNotes: Record<number, string> = {
@@ -880,7 +882,9 @@ export function mergeOwnerStatesSafely(
     ...(primary.dailyAiResourceCompletions || {})
   };
   for (const [k, v] of Object.entries(secondary.dailyAiResourceCompletions || {})) {
-    if (v) dailyAiResourceCompletions[k] = true;
+    if (v && primary.dailyAiResourceCompletions?.[k] === undefined) {
+      dailyAiResourceCompletions[k] = true;
+    }
   }
 
   const merged: UserState = {

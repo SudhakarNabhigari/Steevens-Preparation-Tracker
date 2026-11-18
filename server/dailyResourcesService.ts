@@ -5,9 +5,13 @@ import type {
   TrackDailyAiResources,
   TrackId
 } from '../src/types/index.ts';
+import { generateGroundedDailyBrief } from './geminiService.ts';
+import { fetchRegisteredOwnerUserId } from './auth.ts';
+import { isPlaceholderUuidValue, isValidUuid } from './supabaseConfig.ts';
 import {
   buildAutomationStatusSummary,
   buildCombinedActionPlan,
+  buildDailyEmailContent,
   buildDeterministicReadOnlyTrack,
   DEFAULT_APP_URL,
   DEFAULT_DAILY_RECIPIENT,
@@ -21,6 +25,7 @@ import {
   syncAutomationRunToSupabase,
   type CanonicalAutomationRunRecord,
   type CanonicalCacheStore,
+  type CanonicalDailyDashboardPayload,
   type PipelineEnvConfig
 } from '../supabase/functions/daily-learning-resources/pipeline.ts';
 
@@ -44,14 +49,85 @@ export function getServerPipelineConfig(): PipelineEnvConfig {
     supabaseUrl: (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim(),
     supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() || '',
     ownerUserId: (process.env.OWNER_SUPABASE_USER_ID || process.env.VITE_OWNER_USER_ID || '').trim(),
-    geminiApiKey: process.env.GEMINI_API_KEY?.trim(),
+    geminiApiKey: process.env.PREPARATION_GEMINI_KEY?.trim(),
     youtubeApiKey: process.env.YOUTUBE_API_KEY?.trim(),
     resendApiKey: process.env.RESEND_API_KEY?.trim(),
     resendFromEmail: process.env.RESEND_FROM_EMAIL?.trim(),
     dailyRecipientEmail:
       (process.env.DAILY_REPORT_RECIPIENT_EMAIL || DEFAULT_DAILY_RECIPIENT).trim() ||
       DEFAULT_DAILY_RECIPIENT,
-    appUrl: (process.env.APP_URL || DEFAULT_APP_URL).trim() || DEFAULT_APP_URL
+    appUrl: (process.env.APP_URL || DEFAULT_APP_URL).trim() || DEFAULT_APP_URL,
+    geminiCaller: generateGroundedDailyBrief
+  };
+}
+
+let cachedRegistryOwnerId: { ownerUserId: string; fetchedAt: number } | null = null;
+
+export async function getResolvedServerPipelineConfig(): Promise<PipelineEnvConfig> {
+  const base = getServerPipelineConfig();
+  const rawOwnerId = (base.ownerUserId || '').trim();
+  if (rawOwnerId && isValidUuid(rawOwnerId)) {
+    return base;
+  }
+
+  if (
+    (!rawOwnerId || isPlaceholderUuidValue(rawOwnerId)) &&
+    base.supabaseUrl &&
+    base.supabaseServiceRoleKey
+  ) {
+    if (cachedRegistryOwnerId && Date.now() - cachedRegistryOwnerId.fetchedAt < 60_000) {
+      return { ...base, ownerUserId: cachedRegistryOwnerId.ownerUserId };
+    }
+    const lookup = await fetchRegisteredOwnerUserId({
+      supabaseUrl: base.supabaseUrl,
+      serviceRoleKey: base.supabaseServiceRoleKey
+    });
+    if (lookup.status === 'found') {
+      cachedRegistryOwnerId = { ownerUserId: lookup.ownerUserId, fetchedAt: Date.now() };
+      return { ...base, ownerUserId: lookup.ownerUserId };
+    }
+  }
+
+  return base;
+}
+
+export async function getDailyEmailPreview(options?: {
+  track?: TrackId | 'combined';
+  day?: number;
+}): Promise<{
+  mode: TrackId | 'combined';
+  subject: string;
+  html: string;
+  text: string;
+  appUrl: string;
+  istDate: string;
+  istDateLabel: string;
+  unlockedDays: DailyResourcesDashboardPayload['unlockedDays'];
+}> {
+  const mode: TrackId | 'combined' = options?.track || 'combined';
+  const trackArg: TrackId | undefined = mode === 'combined' ? undefined : mode;
+
+  const dashboard = await getDailyResourcesDashboard({
+    track: trackArg,
+    day: trackArg ? options?.day : undefined
+  });
+
+  const config = await getResolvedServerPipelineConfig();
+  const rendered = buildDailyEmailContent(
+    dashboard as unknown as CanonicalDailyDashboardPayload,
+    config.appUrl,
+    { track: trackArg }
+  );
+
+  return {
+    mode,
+    subject: rendered.subject,
+    html: rendered.html,
+    text: rendered.text,
+    appUrl: rendered.appUrl,
+    istDate: dashboard.istDate,
+    istDateLabel: dashboard.istDateLabel,
+    unlockedDays: dashboard.unlockedDays
   };
 }
 
@@ -141,7 +217,7 @@ export async function generateTrackDailyResources(
     );
   }
 
-  const config = getServerPipelineConfig();
+  const config = await getResolvedServerPipelineConfig();
   const ephemeral = isEphemeralServerlessRuntime();
 
   // In production/Vercel with Supabase Edge Function ready, delegate Owner refresh directly to Edge
@@ -183,7 +259,7 @@ export async function getDailyResourcesDashboard(options?: {
   forceRefresh?: boolean;
 }): Promise<DailyResourcesDashboardPayload> {
   const snapshot = getIstScheduleSnapshotCanonical();
-  const config = getServerPipelineConfig();
+  const config = await getResolvedServerPipelineConfig();
   const ephemeral = isEphemeralServerlessRuntime();
   const sbConfigured = isSupabaseServerConfigured(config);
 
@@ -213,11 +289,20 @@ export async function getDailyResourcesDashboard(options?: {
     });
   };
 
-  const [mainRes, dsaRes, azureRes] = await Promise.all([
-    resolveTrackForGet('main', mainDay),
-    resolveTrackForGet('dsa', dsaDay),
-    resolveTrackForGet('azure', azureDay)
-  ]);
+  let mainRes: TrackDailyAiResources | null = null;
+  let dsaRes: TrackDailyAiResources | null = null;
+  let azureRes: TrackDailyAiResources | null = null;
+  if (ephemeral) {
+    [mainRes, dsaRes, azureRes] = await Promise.all([
+      resolveTrackForGet('main', mainDay),
+      resolveTrackForGet('dsa', dsaDay),
+      resolveTrackForGet('azure', azureDay)
+    ]);
+  } else {
+    mainRes = await resolveTrackForGet('main', mainDay);
+    dsaRes = await resolveTrackForGet('dsa', dsaDay);
+    azureRes = await resolveTrackForGet('azure', azureDay);
+  }
 
   let latestRun: CanonicalAutomationRunRecord | null = null;
   if (sbConfigured) {
@@ -259,7 +344,7 @@ export async function runDailyAutomationJob(options?: {
   activeDailyRunPromise = (async () => {
     const triggerSource = options?.triggerSource || 'manual_owner';
     const shouldSendEmail = options?.sendEmail !== false;
-    const config = getServerPipelineConfig();
+    const config = await getResolvedServerPipelineConfig();
     const ephemeral = isEphemeralServerlessRuntime();
     const sbConfigured = isSupabaseServerConfigured(config);
     const snapshot = getIstScheduleSnapshotCanonical();

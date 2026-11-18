@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { TrackId } from '../../src/types/index.ts';
 import { getDailyResourcesDashboard } from '../../server/dailyResourcesService.ts';
+import { applyApiSecurityAndCorsHeaders } from '../../server/httpCors.ts';
 import { isTrackDayCurrentlyUnlockedCanonical } from '../../supabase/functions/daily-learning-resources/pipeline.ts';
 
 function isValidTrackId(value: unknown): value is TrackId {
@@ -14,6 +15,10 @@ function sendJson(res: ServerResponse, status: number, body: unknown) {
 }
 
 export default async function handler(req: IncomingMessage, res: ServerResponse) {
+  if (applyApiSecurityAndCorsHeaders(req, res, { allowMethods: 'GET, OPTIONS' })) {
+    return;
+  }
+
   if (req.method && req.method !== 'GET') {
     return sendJson(res, 405, { error: 'Method not allowed' });
   }

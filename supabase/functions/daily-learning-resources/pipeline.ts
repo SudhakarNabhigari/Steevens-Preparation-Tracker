@@ -30,6 +30,7 @@ export interface CanonicalYouTubeResource {
   channelName: string;
   url: string;
   videoId?: string;
+  thumbnailUrl?: string;
   topicCovered: string;
   explanation: string;
   whyUseful: string;
@@ -39,16 +40,27 @@ export interface CanonicalYouTubeResource {
   linkKind: 'verified_video' | 'youtube_search_fallback';
 }
 
+export interface CanonicalTimetableSlot {
+  duration: string;
+  activity: string;
+}
+
 export interface CanonicalTrackDailyResources {
   trackId: SharedTrackId;
   trackLabel: string;
   planDay: number;
   planDate: string;
   dateLabel: string;
+  dayOfWeek?: string;
   topicTitle: string;
   phaseOrModule: string;
+  scheduleTarget?: string;
+  studyTimetable?: CanonicalTimetableSlot[];
   learningObjectives: string[];
   topicExplanation: string;
+  practicalExamples?: string[];
+  revisionNotes?: string[];
+  commonMistakes?: string[];
   suggestedLearningOrder: string[];
   dailyGuidance: string;
   practicalExerciseSummary: string;
@@ -58,7 +70,12 @@ export interface CanonicalTrackDailyResources {
   practicalExercises: SharedDailyReferenceLink[];
   status: CanonicalResourceStatus;
   statusMessage: string;
-  aiProviderStatus: 'gemini_generated' | 'quota_exhausted_cached' | 'missing_api_key' | 'unavailable';
+  aiProviderStatus:
+    | 'gemini_generated'
+    | 'quota_exhausted_cached'
+    | 'missing_api_key'
+    | 'invalid_api_key'
+    | 'unavailable';
   youtubeProviderStatus:
     | 'youtube_api_verified'
     | 'search_fallback_no_key'
@@ -136,6 +153,14 @@ export interface CanonicalCacheStore {
   automationRuns: Record<string, CanonicalAutomationRunRecord>;
 }
 
+export type GeminiCallerFn = (
+  ctx: SharedCurriculumDayContext,
+  tutorials: CanonicalYouTubeResource[],
+  docs: SharedDailyReferenceLink[],
+  leetcodeQuestions: SharedDailyLeetCodeQuestion[],
+  geminiApiKey?: string
+) => Promise<GeminiGenerationResult>;
+
 export interface PipelineEnvConfig {
   supabaseUrl?: string;
   supabaseServiceRoleKey?: string;
@@ -147,6 +172,7 @@ export interface PipelineEnvConfig {
   dailyRecipientEmail?: string;
   appUrl?: string;
   fetchImpl?: typeof fetch;
+  geminiCaller?: GeminiCallerFn;
 }
 
 export interface IstScheduleSnapshot {
@@ -398,6 +424,11 @@ interface YouTubeVideoItem {
     description?: string;
     defaultAudioLanguage?: string;
     defaultLanguage?: string;
+    thumbnails?: {
+      medium?: { url?: string };
+      high?: { url?: string };
+      default?: { url?: string };
+    };
   };
   contentDetails?: { duration?: string };
   status?: { privacyStatus?: string };
@@ -494,9 +525,10 @@ export function buildSearchFallbackTutorials(
 
 export async function discoverYouTubeTutorials(
   ctx: SharedCurriculumDayContext,
-  youtubeApiKey?: string
+  youtubeApiKey?: string,
+  fetchImpl: typeof fetch = fetch
 ): Promise<YouTubeDiscoveryResult> {
-  const apiKey = youtubeApiKey?.trim();
+  const apiKey = youtubeApiKey?.trim().replace(/^["']|["']$/g, '').trim();
   if (!apiKey) {
     return {
       tutorials: buildSearchFallbackTutorials(ctx),
@@ -505,6 +537,26 @@ export async function discoverYouTubeTutorials(
         'YOUTUBE_API_KEY is not configured; providing clearly labelled YouTube topic search links without inventing video IDs.'
     };
   }
+
+  const extractSanitizedYouTubeError = async (resp: Response): Promise<string> => {
+    try {
+      const errJson = (await resp.json()) as {
+        error?: { message?: string; status?: string; errors?: Array<{ reason?: string }> };
+      };
+      const reason = errJson?.error?.errors?.[0]?.reason || errJson?.error?.status || '';
+      const rawMsg = errJson?.error?.message || '';
+      const safeMsg = rawMsg
+        .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[REDACTED]')
+        .replace(/key=[^&\s"']+/gi, 'key=[REDACTED]')
+        .slice(0, 140);
+      if (reason && safeMsg) return `${reason} (${safeMsg})`;
+      if (safeMsg) return safeMsg;
+      if (reason) return reason;
+      return '';
+    } catch {
+      return '';
+    }
+  };
 
   try {
     const primaryQuery = buildTrackQueryTerms(ctx)[0];
@@ -517,31 +569,40 @@ export async function discoverYouTubeTutorials(
     searchUrl.searchParams.set('q', primaryQuery);
     searchUrl.searchParams.set('key', apiKey);
 
-    const searchResp = await fetch(searchUrl.toString(), {
+    const searchResp = await fetchImpl(searchUrl.toString(), {
       signal: AbortSignal.timeout(8000)
     });
 
     if (searchResp.status === 403 || searchResp.status === 429) {
+      const detail = await extractSanitizedYouTubeError(searchResp);
       return {
         tutorials: buildSearchFallbackTutorials(ctx),
         providerStatus: 'search_fallback_quota',
-        statusNote:
-          'YouTube Data API free quota reached or key restricted; fell back safely to clearly labelled topic search links.'
+        statusNote: detail
+          ? `YouTube Data API HTTP ${searchResp.status}: ${detail}; fell back safely to labelled topic search links.`
+          : 'YouTube Data API free quota reached or key restricted; fell back safely to clearly labelled topic search links.'
       };
     }
 
     if (!searchResp.ok) {
+      const detail = await extractSanitizedYouTubeError(searchResp);
       return {
         tutorials: buildSearchFallbackTutorials(ctx),
         providerStatus: 'search_fallback_quota',
-        statusNote: `YouTube search API returned HTTP ${searchResp.status}; using labelled search links instead of unverified IDs.`
+        statusNote: detail
+          ? `YouTube search API returned HTTP ${searchResp.status} (${detail}); using labelled search links instead of unverified IDs.`
+          : `YouTube search API returned HTTP ${searchResp.status}; using labelled search links instead of unverified IDs.`
       };
     }
 
     const searchJson = (await searchResp.json()) as { items?: YouTubeSearchItem[] };
-    const candidateIds = (searchJson.items || [])
-      .map((item) => item.id?.videoId)
-      .filter((id): id is string => Boolean(id && /^[a-zA-Z0-9_-]{11}$/.test(id)));
+    const candidateIds = Array.from(
+      new Set(
+        (searchJson.items || [])
+          .map((item) => item.id?.videoId)
+          .filter((id): id is string => Boolean(id && /^[a-zA-Z0-9_-]{11}$/.test(id)))
+      )
+    );
 
     if (candidateIds.length === 0) {
       return {
@@ -557,22 +618,28 @@ export async function discoverYouTubeTutorials(
     videosUrl.searchParams.set('id', candidateIds.join(','));
     videosUrl.searchParams.set('key', apiKey);
 
-    const videosResp = await fetch(videosUrl.toString(), {
+    const videosResp = await fetchImpl(videosUrl.toString(), {
       signal: AbortSignal.timeout(8000)
     });
 
     if (!videosResp.ok) {
+      const detail = await extractSanitizedYouTubeError(videosResp);
       return {
         tutorials: buildSearchFallbackTutorials(ctx),
         providerStatus: 'search_fallback_quota',
-        statusNote: `YouTube videos metadata lookup returned HTTP ${videosResp.status}.`
+        statusNote: detail
+          ? `YouTube videos metadata lookup returned HTTP ${videosResp.status} (${detail}).`
+          : `YouTube videos metadata lookup returned HTTP ${videosResp.status}.`
       };
     }
 
     const videosJson = (await videosResp.json()) as { items?: YouTubeVideoItem[] };
+    const seenVideoIds = new Set<string>();
     const publicVideos = (videosJson.items || []).filter((v) => {
-      if (!v.id || !v.snippet?.title || !v.snippet?.channelTitle) return false;
+      if (!v.id || seenVideoIds.has(v.id)) return false;
+      if (!v.snippet?.title || !v.snippet?.channelTitle) return false;
       if (v.status?.privacyStatus && v.status.privacyStatus !== 'public') return false;
+      seenVideoIds.add(v.id);
       return true;
     });
 
@@ -598,12 +665,21 @@ export async function discoverYouTubeTutorials(
       const shortSnippet = snippetDesc
         ? snippetDesc.slice(0, 160)
         : `Video tutorial covering ${ctx.topic}.`;
+      const rawThumb =
+        v.snippet?.thumbnails?.medium?.url ||
+        v.snippet?.thumbnails?.high?.url ||
+        v.snippet?.thumbnails?.default?.url ||
+        `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      const thumbnailUrl = isValidHttpsUrl(rawThumb)
+        ? rawThumb
+        : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
       return {
         id: `yt_${ctx.trackId}_d${ctx.dayNumber}_${videoId}_${idx + 1}`,
         title: v.snippet?.title || `${ctx.topic} Tutorial`,
         channelName: v.snippet?.channelTitle || 'Verified YouTube Channel',
         url: `https://www.youtube.com/watch?v=${videoId}`,
         videoId,
+        thumbnailUrl,
         topicCovered: `${ctx.topic}: ${ctx.objectives[0] || shortSnippet}`,
         explanation: shortSnippet,
         whyUseful: `Directly explains "${ctx.topic}" for Day ${ctx.dayNumber} of ${ctx.trackLabel}.`,
@@ -620,23 +696,135 @@ export async function discoverYouTubeTutorials(
       statusNote: `Verified ${tutorials.length} public YouTube tutorials via YouTube Data API v3.`
     };
   } catch (err) {
+    const safeErr =
+      err instanceof Error
+        ? err.message
+            .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[REDACTED]')
+            .replace(/key=[^&\s"']+/gi, 'key=[REDACTED]')
+        : '';
     return {
       tutorials: buildSearchFallbackTutorials(ctx),
       providerStatus: 'search_fallback_quota',
-      statusNote:
-        err instanceof Error
-          ? `YouTube verification error (${err.message}); using labelled search links.`
-          : 'YouTube verification failed; using labelled search links.'
+      statusNote: safeErr
+        ? `YouTube verification error (${safeErr}); using labelled search links.`
+        : 'YouTube verification failed; using labelled search links.'
     };
   }
 }
 
 // =========================================================================
-// GEMINI FREE TIER ENRICHMENT (STRICTLY gemini-4-hydrogen, ZERO PAID FALLBACKS)
+// ACTUAL SCHEDULE & TIMETABLE DERIVATION (ZERO INVENTED TIMINGS)
+// =========================================================================
+export function buildActualScheduleMeta(ctx: SharedCurriculumDayContext): {
+  scheduleTarget: string;
+  studyTimetable: CanonicalTimetableSlot[];
+} {
+  const isSat = ctx.dayOfWeek === 'Saturday';
+  const isSun = ctx.dayOfWeek === 'Sunday';
+
+  if (ctx.trackId === 'main') {
+    if (isSat) {
+      return {
+        scheduleTarget: '3h Prep + 3h Weekly Exam',
+        studyTimetable: [
+          { duration: '90 min', activity: 'Review Week Concept & Architecture Notes' },
+          { duration: '90 min', activity: 'Complete Practical Deliverable & Weak-Area Revision' },
+          { duration: '180 min', activity: `Weekly Saturday Examination (Week ${ctx.weekNumber})` }
+        ]
+      };
+    }
+    if (isSun) {
+      return {
+        scheduleTarget: '3 Hours Revision',
+        studyTimetable: [
+          { duration: '90 min', activity: 'Weekly Consolidation & Mistake Review' },
+          { duration: '60 min', activity: 'Rebuild Key Implementation / Diagram' },
+          { duration: '30 min', activity: 'Next-Week Warm-Up & Notes Organization' }
+        ]
+      };
+    }
+    return {
+      scheduleTarget: '4 Hours (240 Mins)',
+      studyTimetable: [
+        { duration: '60 min', activity: 'Learn Concepts, Docs & Core Theory' },
+        { duration: '120 min', activity: 'Guided Implementation & Practical Exercise' },
+        { duration: '30 min', activity: 'Test, Debug & Verify Edge Cases' },
+        { duration: '30 min', activity: 'Write Revision Notes & Save Deliverable' }
+      ]
+    };
+  }
+
+  if (ctx.trackId === 'dsa') {
+    if (isSat) {
+      return {
+        scheduleTarget: '2 Hours (120 Mins) Revision',
+        studyTimetable: [
+          { duration: '45 min', activity: 'Re-solve Weekly C++ Exercises Without Notes' },
+          { duration: '45 min', activity: 'Timed Coding Assessment & Complexity Analysis' },
+          { duration: '30 min', activity: 'Update DSA Error Log & Edge-Case Notes' }
+        ]
+      };
+    }
+    if (isSun) {
+      return {
+        scheduleTarget: '2 Hours (120 Mins) Revision',
+        studyTimetable: [
+          { duration: '40 min', activity: 'Review Weekly C++ Patterns & STL Notes' },
+          { duration: '50 min', activity: 'Rebuild 1 Key Solution From Blank File' },
+          { duration: '30 min', activity: 'List 3 Weak Areas & Next-Week Warm-Up' }
+        ]
+      };
+    }
+    return {
+      scheduleTarget: '90 Minutes',
+      studyTimetable: [
+        { duration: '30 min', activity: 'Learn & Understand C++ Concepts & Complexity' },
+        { duration: '40 min', activity: 'Solve Practice Problems + 3 LeetCode Questions' },
+        { duration: '20 min', activity: 'Revise & Make Short C++ Notes' }
+      ]
+    };
+  }
+
+  // Azure Alternate (100 Days): 1 hour Mon-Sun
+  if (isSat) {
+    return {
+      scheduleTarget: '60 Minutes Revision',
+      studyTimetable: [
+        { duration: '30 min', activity: 'Answer Weekly Azure Scenario Questions' },
+        { duration: '20 min', activity: 'Repeat Portal/Service Exercise & Security Check' },
+        { duration: '10 min', activity: 'Verify Cost & Lab Resource Cleanup' }
+      ]
+    };
+  }
+  if (isSun) {
+    return {
+      scheduleTarget: '60 Minutes Revision',
+      studyTimetable: [
+        { duration: '25 min', activity: 'Review Azure Service Comparison Notes' },
+        { duration: '25 min', activity: 'Redraw Architecture / Data-Flow Diagram' },
+        { duration: '10 min', activity: 'List Gaps & Next-Week Checklist' }
+      ]
+    };
+  }
+  return {
+    scheduleTarget: '60 Minutes',
+    studyTimetable: [
+      { duration: '25 min', activity: 'Read Microsoft Learn Docs & Service Concepts' },
+      { duration: '25 min', activity: 'Hands-On Architecture / Portal Exercise' },
+      { duration: '10 min', activity: 'Document Cost, Security & Milestone Notes' }
+    ]
+  };
+}
+
+// =========================================================================
+// GEMINI FREE TIER ENRICHMENT (STRICTLY gemini-4-hydrogen, PREPARATION_GEMINI_KEY)
 // =========================================================================
 export interface GeminiEnrichmentOutput {
   topicExplanation: string;
   learningObjectives: string[];
+  practicalExamples: string[];
+  revisionNotes: string[];
+  commonMistakes: string[];
   suggestedLearningOrder: string[];
   dailyGuidance: string;
   practicalExerciseSummary: string;
@@ -650,13 +838,18 @@ export interface GeminiEnrichmentOutput {
 
 export interface GeminiGenerationResult {
   success: boolean;
-  aiProviderStatus: 'gemini_generated' | 'quota_exhausted_cached' | 'missing_api_key' | 'unavailable';
+  aiProviderStatus:
+    | 'gemini_generated'
+    | 'quota_exhausted_cached'
+    | 'missing_api_key'
+    | 'invalid_api_key'
+    | 'unavailable';
   modelUsed?: string;
   data?: GeminiEnrichmentOutput;
   errorMessage?: string;
 }
 
-function isQuotaOrRateLimitStatusOrMsg(status: number, msg: string): boolean {
+export function isQuotaOrRateLimitStatusOrMsg(status: number, msg: string): boolean {
   if (status === 429) return true;
   const lower = msg.toLowerCase();
   return (
@@ -665,6 +858,31 @@ function isQuotaOrRateLimitStatusOrMsg(status: number, msg: string): boolean {
     lower.includes('quota') ||
     lower.includes('rate limit')
   );
+}
+
+export function isInvalidOrDisabledApiKeyStatusOrMsg(status: number, msg: string): boolean {
+  if (status === 401 || status === 403) return true;
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes('api_key_invalid') ||
+    lower.includes('api key not valid') ||
+    lower.includes('permission_denied') ||
+    lower.includes('api key expired') ||
+    lower.includes('disabled') ||
+    lower.includes('consumer') && lower.includes('suspended')
+  );
+}
+
+export function buildTrackMentorSystemInstruction(trackId: SharedTrackId): string {
+  const base =
+    "You are an engineering mentor for Steeven's 180-Day Preparation Tracker. Stay 100% grounded in the provided curriculum topic, subtopics, practical task, official docs, and YouTube items. Never invent URLs, video IDs, or LeetCode problems. Keep explanations beginner-friendly, concise, and actionable. For every YouTube item in youtubeAnnotations, return its exact id and write an explicit topicCovered sentence naming the specific concept covered alongside a clear short explanation and whyUseful note.";
+  if (trackId === 'dsa') {
+    return `${base} For DSA in C++, include clear C++17 examples and Big-O time/space complexity in practicalExamples, highlight common off-by-one/edge-case bugs in commonMistakes, and provide concise C++ revision reminders in revisionNotes.`;
+  }
+  if (trackId === 'azure') {
+    return `${base} For Azure (AZ-900 / DP-900 / AI-102), emphasize Azure service boundaries, real-world architecture use cases in practicalExamples, cost/security/cleanup cautions in commonMistakes, and Microsoft Learn exam revision notes in revisionNotes.`;
+  }
+  return `${base} For Main Plan (Production RAG & AI Engineering), include concrete Python/RAG architectural examples in practicalExamples, trust-boundary/failure pitfalls in commonMistakes, and crisp revision notes in revisionNotes.`;
 }
 
 export async function generateGroundedDailyBrief(
@@ -679,7 +897,7 @@ export async function generateGroundedDailyBrief(
     return {
       success: false,
       aiProviderStatus: 'missing_api_key',
-      errorMessage: 'GEMINI_API_KEY is not configured in server environment secrets.'
+      errorMessage: 'PREPARATION_GEMINI_KEY is not configured in server environment secrets.'
     };
   }
 
@@ -687,6 +905,7 @@ export async function generateGroundedDailyBrief(
     track: ctx.trackLabel,
     dayNumber: ctx.dayNumber,
     date: ctx.dateLabel,
+    dayOfWeek: ctx.dayOfWeek,
     phaseOrModule: ctx.phaseOrModule,
     topic: ctx.topic,
     curriculumObjectives: ctx.objectives,
@@ -723,7 +942,7 @@ export async function generateGroundedDailyBrief(
           systemInstruction: {
             parts: [
               {
-                text: 'You are an engineering mentor for Steeven\'s 180-Day Preparation Tracker. Stay 100% grounded in the provided curriculum topic, subtopics, practical task, official docs, and YouTube items. Never invent URLs, video IDs, or LeetCode problems. Keep explanations concise and actionable. For every YouTube item in youtubeAnnotations, return its exact id and write an explicit topicCovered sentence naming the specific concept covered alongside a clear short explanation and whyUseful note.'
+                text: buildTrackMentorSystemInstruction(ctx.trackId)
               }
             ]
           },
@@ -746,6 +965,9 @@ export async function generateGroundedDailyBrief(
               properties: {
                 topicExplanation: { type: 'STRING' },
                 learningObjectives: { type: 'ARRAY', items: { type: 'STRING' } },
+                practicalExamples: { type: 'ARRAY', items: { type: 'STRING' } },
+                revisionNotes: { type: 'ARRAY', items: { type: 'STRING' } },
+                commonMistakes: { type: 'ARRAY', items: { type: 'STRING' } },
                 suggestedLearningOrder: { type: 'ARRAY', items: { type: 'STRING' } },
                 dailyGuidance: { type: 'STRING' },
                 practicalExerciseSummary: { type: 'STRING' },
@@ -766,6 +988,9 @@ export async function generateGroundedDailyBrief(
               required: [
                 'topicExplanation',
                 'learningObjectives',
+                'practicalExamples',
+                'revisionNotes',
+                'commonMistakes',
                 'suggestedLearningOrder',
                 'dailyGuidance',
                 'practicalExerciseSummary',
@@ -774,18 +999,25 @@ export async function generateGroundedDailyBrief(
             }
           }
         }),
-        signal: AbortSignal.timeout(5000)
+        signal: AbortSignal.timeout(20000)
       }
     );
 
     if (!resp.ok) {
       const errText = await resp.text().catch(() => '');
       const quotaHit = isQuotaOrRateLimitStatusOrMsg(resp.status, errText);
+      const invalidKey = !quotaHit && isInvalidOrDisabledApiKeyStatusOrMsg(resp.status, errText);
       return {
         success: false,
-        aiProviderStatus: quotaHit ? 'quota_exhausted_cached' : 'unavailable',
+        aiProviderStatus: quotaHit
+          ? 'quota_exhausted_cached'
+          : invalidKey
+          ? 'invalid_api_key'
+          : 'unavailable',
         errorMessage: quotaHit
-          ? `Gemini free-tier quota exceeded or rate-limited (HTTP ${resp.status}). Preserving grounded curriculum brief without paid fallback.`
+          ? `Gemini quota exceeded or rate-limited (HTTP ${resp.status}).`
+          : invalidKey
+          ? `PREPARATION_GEMINI_KEY is invalid, disabled, or denied permission (HTTP ${resp.status}). Update PREPARATION_GEMINI_KEY in Secrets.`
           : `Gemini returned HTTP ${resp.status}`
       };
     }
@@ -812,11 +1044,18 @@ export async function generateGroundedDailyBrief(
   } catch (err) {
     const detail = err instanceof Error ? err.message : 'Gemini API call failed.';
     const quotaHit = isQuotaOrRateLimitStatusOrMsg(0, detail);
+    const invalidKey = !quotaHit && isInvalidOrDisabledApiKeyStatusOrMsg(0, detail);
     return {
       success: false,
-      aiProviderStatus: quotaHit ? 'quota_exhausted_cached' : 'unavailable',
+      aiProviderStatus: quotaHit
+        ? 'quota_exhausted_cached'
+        : invalidKey
+        ? 'invalid_api_key'
+        : 'unavailable',
       errorMessage: quotaHit
-        ? `Gemini free-tier quota exceeded or rate-limited (${detail}). Preserving grounded curriculum guidance without paid fallback.`
+        ? `Gemini quota exceeded or rate-limited (${detail}).`
+        : invalidKey
+        ? `PREPARATION_GEMINI_KEY is invalid or disabled (${detail}).`
         : `Gemini generation unavailable: ${detail}`
     };
   }
@@ -849,6 +1088,9 @@ function buildFallbackBrief(
     return {
       topicExplanation: existingCached.topicExplanation,
       learningObjectives: existingCached.learningObjectives,
+      practicalExamples: existingCached.practicalExamples || [],
+      revisionNotes: existingCached.revisionNotes || [],
+      commonMistakes: existingCached.commonMistakes || [],
       suggestedLearningOrder: existingCached.suggestedLearningOrder,
       dailyGuidance: existingCached.dailyGuidance,
       practicalExerciseSummary: existingCached.practicalExerciseSummary,
@@ -858,10 +1100,48 @@ function buildFallbackBrief(
 
   const baseExplanation =
     ctx.trackId === 'dsa'
-      ? `Today's C++ DSA focus is "${ctx.topic}" (${ctx.phaseOrModule}). Master ${ctx.objectives[0]} and implement cleanly in C++ to satisfy: ${ctx.expectedOutcome}`
+      ? `Today's C++ DSA focus is "${ctx.topic}" (${ctx.phaseOrModule}). Master ${ctx.objectives[0] || ctx.topic} and implement cleanly in C++ to satisfy: ${ctx.expectedOutcome}`
       : ctx.trackId === 'azure'
       ? `Today's Azure preparation covers "${ctx.topic}" (${ctx.phaseOrModule}). Study Microsoft Learn architecture guidance to complete: ${ctx.expectedOutcome}`
       : `Today's Main Plan session focuses on "${ctx.topic}" (${ctx.phaseOrModule}). Complete the core implementation concepts so you can ship: ${ctx.deliverable}`;
+
+  const practicalExamples =
+    ctx.trackId === 'dsa'
+      ? [
+          `C++ Practice Pattern (${ctx.topic}): Write clean C++17 code using standard STL headers, trace dry-run states, and verify Time & Space Big-O complexity.`,
+          `Hands-on Deliverable: ${ctx.practicalWork}`
+        ]
+      : ctx.trackId === 'azure'
+      ? [
+          `Azure Architecture & Use Case (${ctx.topic}): Map service boundaries, identity/RBAC, and cost controls based on ${docs[0]?.title || 'Microsoft Learn'}.`,
+          `Practical Exercise: ${ctx.practicalWork}`
+        ]
+      : [
+          `Engineering Implementation (${ctx.topic}): Apply today's concept to your Production RAG codebase — ${ctx.practicalWork}`,
+          `Expected Milestone Output: ${ctx.deliverable}`
+        ];
+
+  const revisionNotes = [
+    `Key Focus: ${ctx.objectives.slice(0, 3).join(' · ') || ctx.topic}`,
+    `Expected Outcome: ${ctx.expectedOutcome}`,
+    `Deliverable Target: ${ctx.deliverable}`
+  ];
+
+  const commonMistakes =
+    ctx.trackId === 'dsa'
+      ? [
+          'Skipping edge-case dry runs (empty input, single element, integer overflow) before coding.',
+          'Writing brute-force loops without analyzing Time/Space complexity first.'
+        ]
+      : ctx.trackId === 'azure'
+      ? [
+          'Leaving paid Azure lab resources running after completing hands-on practice.',
+          'Hardcoding connection strings or API keys instead of using managed identity / Key Vault.'
+        ]
+      : [
+          'Skipping explicit trust boundaries or letting client code call providers directly.',
+          'Moving to the next topic before verifying today\'s deliverable and notes.'
+        ];
 
   const order =
     ctx.trackId === 'dsa'
@@ -869,7 +1149,7 @@ function buildFallbackBrief(
           `Review official C++ documentation (${docs[0]?.title || 'cppreference'}) for syntax & complexity guarantees.`,
           `Watch 1–2 focused YouTube tutorials on "${ctx.topic}" before coding.`,
           leetcodeQuestions.some((q) => q.available)
-            ? 'Solve today\'s LeetCode triplet in order: Easy -> Medium -> Hard.'
+            ? "Solve today's LeetCode triplet in order: Easy -> Medium -> Hard."
             : `Complete today's C++ compiler & hands-on practice tasks (${ctx.practicalWork.slice(0, 80)}).`,
           `Log your milestone deliverable: ${ctx.deliverable}`
         ]
@@ -883,6 +1163,9 @@ function buildFallbackBrief(
   return {
     topicExplanation: baseExplanation,
     learningObjectives: ctx.objectives.slice(0, 5),
+    practicalExamples,
+    revisionNotes,
+    commonMistakes,
     suggestedLearningOrder: order,
     dailyGuidance: `${ctx.expectedOutcome} Deliverable target: ${ctx.deliverable}`,
     practicalExerciseSummary: `${ctx.practicalWork} Expected output: ${ctx.deliverable}`,
@@ -953,6 +1236,27 @@ function escapeHtml(text: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function safeHttpsHref(url?: string): string | null {
+  if (!url || !isValidHttpsUrl(url)) return null;
+  return escapeHtml(url);
+}
+
+function getTrackShortBadgeLabel(trackId: SharedTrackId): string {
+  if (trackId === 'dsa') return 'DSA in C++';
+  if (trackId === 'azure') return 'Azure Alternate';
+  return 'Main Plan (180d)';
+}
+
+function getTrackMotivationQuote(track: CanonicalTrackDailyResources): string {
+  if (track.trackId === 'dsa') {
+    return `"Small, consistent efforts on the right topics create big results. Keep coding, Steeven! 💪"`;
+  }
+  if (track.trackId === 'azure') {
+    return `"Stay disciplined, Steeven. Today's Azure architecture clarity is tomorrow's cloud confidence. 🚀"`;
+  }
+  return `"One focused day at a time. Your consistency builds your future. 💪"`;
+}
+
 function renderYouTubeHtmlList(tutorials: CanonicalYouTubeResource[]): string {
   if (!tutorials || tutorials.length === 0) {
     return '<p style="margin:8px 0;color:#78716C;font-size:13px;">No verified tutorials available for this topic today.</p>';
@@ -960,88 +1264,200 @@ function renderYouTubeHtmlList(tutorials: CanonicalYouTubeResource[]): string {
 
   return tutorials
     .map((yt, idx) => {
-      const badgeText = yt.isVerifiedVideo ? 'Verified Video' : 'Topic Search Link';
+      const safeHref = safeHttpsHref(yt.url);
+      const safeThumb = safeHttpsHref(yt.thumbnailUrl);
+      const badgeText = yt.isVerifiedVideo ? 'Verified Video' : 'Topic Search';
       const badgeBg = yt.isVerifiedVideo ? '#ECFDF5' : '#FEF3C7';
       const badgeColor = yt.isVerifiedVideo ? '#047857' : '#92400E';
-      const metaParts = [
-        yt.duration ? `Duration: ${escapeHtml(yt.duration)}` : null,
-        yt.language ? `Language: ${escapeHtml(yt.language.toUpperCase())}` : null
-      ].filter(Boolean);
 
       return `
-      <div style="border:1px solid #E0DCD3;border-radius:10px;padding:12px 14px;margin-bottom:10px;background:#FAF8F5;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:4px;">
-          <strong style="font-size:14px;color:#292929;">${idx + 1}. ${escapeHtml(yt.title)}</strong>
-          <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:${badgeBg};color:${badgeColor};font-size:11px;font-weight:700;white-space:nowrap;">${badgeText}</span>
-        </div>
-        <div style="font-size:12px;color:#57534E;margin-bottom:6px;">
-          <strong>Channel:</strong> ${escapeHtml(yt.channelName)}
-          ${metaParts.length > 0 ? ` &nbsp;|&nbsp; ${metaParts.join(' &nbsp;|&nbsp; ')}` : ''}
-        </div>
-        <div style="font-size:12px;color:#292929;margin-bottom:4px;">
-          <strong style="color:#C2410C;">Topic Covered:</strong> ${escapeHtml(yt.topicCovered)}
-        </div>
-        <div style="font-size:12px;color:#57534E;margin-bottom:4px;">
-          <strong>Explanation:</strong> ${escapeHtml(yt.explanation)}
-        </div>
-        <div style="font-size:12px;color:#57534E;margin-bottom:8px;">
-          <strong>Why Watch:</strong> ${escapeHtml(yt.whyUseful)}
-        </div>
-        <a href="${escapeHtml(yt.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:6px 12px;border-radius:6px;background:#292929;color:#F3EFE6;text-decoration:none;font-size:12px;font-weight:600;">
-          ${yt.isVerifiedVideo ? 'Watch on YouTube' : 'Open YouTube Topic Search'} &rarr;
-        </a>
-      </div>`;
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #E0DCD3;border-radius:10px;margin-bottom:10px;background:#FAF8F5;border-collapse:separate;">
+        <tr>
+          <td style="padding:10px 12px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                ${
+                  safeThumb
+                    ? `<td width="118" valign="top" style="padding-right:12px;">
+                        <img src="${safeThumb}" alt="${escapeHtml(yt.title)}" width="112" style="display:block;width:112px;height:64px;object-fit:cover;border-radius:8px;border:1px solid #E0DCD3;" />
+                      </td>`
+                    : ''
+                }
+                <td valign="top">
+                  <div style="margin-bottom:4px;">
+                    <strong style="font-size:13px;color:#292929;line-height:1.35;">${idx + 1}. ${escapeHtml(yt.title)}</strong>
+                  </div>
+                  <div style="font-size:11px;color:#57534E;margin-bottom:5px;">
+                    <strong>${escapeHtml(yt.channelName)}</strong>
+                    ${yt.duration ? ` &middot; <span style="font-family:monospace;color:#292929;">${escapeHtml(yt.duration)}</span>` : ''}
+                    &nbsp;<span style="display:inline-block;padding:1px 7px;border-radius:999px;background:${badgeBg};color:${badgeColor};font-size:10px;font-weight:700;">${badgeText}</span>
+                  </div>
+                  <div style="font-size:11px;color:#57534E;line-height:1.45;margin-bottom:7px;">
+                    <strong style="color:#C2410C;">Topic:</strong> ${escapeHtml(yt.topicCovered)}
+                  </div>
+                  ${
+                    safeHref
+                      ? `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:5px 11px;border-radius:6px;background:#292929;color:#F3EFE6;text-decoration:none;font-size:11px;font-weight:700;">${
+                          yt.isVerifiedVideo ? 'Watch Video' : 'Open YouTube Search'
+                        } &rarr;</a>`
+                      : ''
+                  }
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+      </table>`;
     })
     .join('');
 }
 
 function renderLeetCodeHtmlList(questions: SharedDailyLeetCodeQuestion[]): string {
-  return questions
-    .map((q) => {
-      const diffColor =
-        q.difficulty === 'Easy' ? '#047857' : q.difficulty === 'Medium' ? '#B45309' : '#BE123C';
-      const diffBg =
-        q.difficulty === 'Easy' ? '#ECFDF5' : q.difficulty === 'Medium' ? '#FFFBEB' : '#FFF1F2';
+  return `
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      ${questions
+        .map((q) => {
+          const diffEmoji = q.difficulty === 'Easy' ? '🟢' : q.difficulty === 'Medium' ? '🟡' : '🔴';
+          const diffColor =
+            q.difficulty === 'Easy' ? '#047857' : q.difficulty === 'Medium' ? '#B45309' : '#BE123C';
+          const diffBg =
+            q.difficulty === 'Easy' ? '#F0FDF4' : q.difficulty === 'Medium' ? '#FFFBEB' : '#FFF1F2';
+          const safeHref = safeHttpsHref(q.url);
 
-      if (!q.available) {
-        return `
-        <div style="border:1px solid #E0DCD3;border-radius:10px;padding:12px 14px;margin-bottom:8px;background:#FAF8F5;">
-          <div style="margin-bottom:4px;">
-            <span style="display:inline-block;padding:2px 8px;border-radius:6px;background:${diffBg};color:${diffColor};font-size:11px;font-weight:700;text-transform:uppercase;">${q.slot}. ${q.difficulty}</span>
-            <strong style="font-size:13px;color:#57534E;margin-left:8px;">Unavailable for Today's Topic</strong>
-          </div>
-          <p style="margin:4px 0 0;font-size:12px;color:#78716C;">${escapeHtml(
-            q.whyUnavailable || q.shortExplanation
-          )}</p>
-        </div>`;
+          return `
+          <td width="33.33%" valign="top" style="padding:4px;" class="stack-col">
+            <div style="border:1px solid #E0DCD3;border-radius:10px;padding:12px;background:${diffBg};height:100%;">
+              <div style="font-size:11px;font-weight:800;color:${diffColor};text-transform:uppercase;margin-bottom:6px;">
+                ${diffEmoji} ${escapeHtml(q.difficulty)}
+              </div>
+              ${
+                q.available
+                  ? `<div style="font-size:13px;font-weight:800;color:#292929;margin-bottom:5px;line-height:1.3;">
+                      ${q.problemNumber ? `#${escapeHtml(q.problemNumber)}. ` : ''}${escapeHtml(q.title || '')}
+                    </div>
+                    <div style="font-size:11px;color:#57534E;line-height:1.45;margin-bottom:6px;">
+                      ${escapeHtml(q.shortExplanation)}
+                    </div>
+                    <div style="font-size:11px;color:#292929;line-height:1.4;margin-bottom:8px;">
+                      <strong>Relevance:</strong> ${escapeHtml(q.whyMatchesTopic)}
+                    </div>
+                    ${
+                      safeHref
+                        ? `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:6px 10px;border-radius:6px;background:#E7826D;color:#292929;text-decoration:none;font-size:11px;font-weight:800;">Solve on LeetCode &rarr;</a>`
+                        : ''
+                    }`
+                  : `<div style="font-size:12px;font-weight:700;color:#57534E;margin-bottom:4px;">Unavailable Today</div>
+                    <div style="font-size:11px;color:#78716C;line-height:1.4;">${escapeHtml(
+                      q.whyUnavailable || q.shortExplanation
+                    )}</div>`
+              }
+            </div>
+          </td>`;
+        })
+        .join('')}
+    </tr>
+  </table>`;
+}
+
+function hasChecklistCompletion(
+  doneMap: Record<string, boolean>,
+  exactKeys: string[],
+  prefixes: string[] = []
+): boolean {
+  for (const key of exactKeys) {
+    if (doneMap[key]) return true;
+  }
+  if (prefixes.length > 0) {
+    for (const [key, val] of Object.entries(doneMap)) {
+      if (val && prefixes.some((prefix) => key.startsWith(prefix))) {
+        return true;
       }
+    }
+  }
+  return false;
+}
 
-      return `
-      <div style="border:1px solid #E0DCD3;border-radius:10px;padding:12px 14px;margin-bottom:8px;background:#FFFFFF;">
-        <div style="margin-bottom:4px;">
-          <span style="display:inline-block;padding:2px 8px;border-radius:6px;background:${diffBg};color:${diffColor};font-size:11px;font-weight:700;text-transform:uppercase;">${q.slot}. ${q.difficulty}</span>
-          <strong style="font-size:14px;color:#292929;margin-left:8px;">${
-            q.problemNumber ? `#${escapeHtml(q.problemNumber)} ` : ''
-          }${escapeHtml(q.title || '')}</strong>
-        </div>
-        <div style="font-size:12px;color:#57534E;margin-bottom:4px;">${escapeHtml(q.shortExplanation)}</div>
-        <div style="font-size:12px;color:#57534E;margin-bottom:8px;"><strong>Topic Fit:</strong> ${escapeHtml(
-          q.whyMatchesTopic
-        )}</div>
-        ${
-          q.url
-            ? `<a href="${escapeHtml(q.url)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:6px 12px;border-radius:6px;background:#E7826D;color:#292929;text-decoration:none;font-size:12px;font-weight:700;">Solve on LeetCode &rarr;</a>`
-            : ''
-        }
-      </div>`;
-    })
-    .join('');
+function buildTrackChecklistItems(
+  track: CanonicalTrackDailyResources,
+  completedKeys?: Record<string, boolean>
+): { label: string; checked: boolean }[] {
+  const ctx = getSharedCurriculumDayContext(track.trackId, track.planDay);
+  const doneMap = completedKeys || {};
+  const prefix = track.trackId === 'main' ? `${track.planDay}_` : `${track.trackId}_${track.planDay}_`;
+  const ytPrefix = `yt_${track.trackId}_d${track.planDay}_`;
+  const docPrefix = `doc_${track.trackId}_d${track.planDay}_`;
+  const exKey = `ex_${track.trackId}_d${track.planDay}`;
+
+  if (track.trackId === 'dsa') {
+    return [
+      {
+        label: `Study ${track.topicTitle} (Concepts & C++ Examples)`,
+        checked: hasChecklistCompletion(doneMap, [`${prefix}obj`])
+      },
+      {
+        label: 'Watch recommended YouTube tutorial',
+        checked: hasChecklistCompletion(doneMap, [`${ytPrefix}0`], [ytPrefix])
+      },
+      {
+        label: track.leetcodeQuestions.some((q) => q.available)
+          ? 'Solve the 3 LeetCode problems (Easy / Medium / Hard)'
+          : `Complete hands-on C++ work: ${ctx?.practicalWork.slice(0, 70) || track.topicTitle}`,
+        checked: hasChecklistCompletion(doneMap, [`${prefix}work`, exKey])
+      },
+      {
+        label: `Revise & save milestone: ${ctx?.deliverable || track.topicTitle}`,
+        checked: hasChecklistCompletion(doneMap, [`${prefix}milestone`])
+      }
+    ];
+  }
+
+  if (track.trackId === 'azure') {
+    return [
+      {
+        label: `Read Microsoft Learn docs for ${track.topicTitle}`,
+        checked: hasChecklistCompletion(doneMap, [`${prefix}obj`], [docPrefix])
+      },
+      {
+        label: 'Watch recommended Azure YouTube video',
+        checked: hasChecklistCompletion(doneMap, [`${ytPrefix}0`], [ytPrefix])
+      },
+      {
+        label: `Complete hands-on lab/exercise: ${ctx?.practicalWork.slice(0, 75) || track.topicTitle}`,
+        checked: hasChecklistCompletion(doneMap, [`${prefix}work`, exKey])
+      },
+      {
+        label: `Verify cost/security cleanup & log notes (${ctx?.deliverable.slice(0, 55) || 'Milestone'})`,
+        checked: hasChecklistCompletion(doneMap, [`${prefix}milestone`])
+      }
+    ];
+  }
+
+  return [
+    {
+      label: `Study Main Plan Day ${track.planDay}: ${track.topicTitle}`,
+      checked: hasChecklistCompletion(doneMap, [`${track.planDay}_concept`, `${track.planDay}_t1`])
+    },
+    {
+      label: 'Watch topic-specific YouTube walkthrough & review docs',
+      checked: hasChecklistCompletion(doneMap, [`${docPrefix}0`, `${ytPrefix}0`], [docPrefix, ytPrefix])
+    },
+    {
+      label: `Build practical task: ${ctx?.practicalWork.slice(0, 75) || track.topicTitle}`,
+      checked: hasChecklistCompletion(doneMap, [`${track.planDay}_practical`, `${track.planDay}_t2`, exKey])
+    },
+    {
+      label: `Test edge cases & ship deliverable (${ctx?.deliverable.slice(0, 55) || 'Deliverable'})`,
+      checked: hasChecklistCompletion(doneMap, [`${track.planDay}_deliverable`, `${track.planDay}_t3`])
+    }
+  ];
 }
 
 function renderTrackSectionHtml(
   sectionLabel: string,
   track: CanonicalTrackDailyResources | null,
-  includeLeetCode: boolean
+  includeLeetCode: boolean,
+  completedChecklistMap?: Record<string, boolean>
 ): string {
   if (!track) {
     return `
@@ -1049,80 +1465,323 @@ function renderTrackSectionHtml(
       <h2 style="margin:0 0 8px;font-size:16px;color:#292929;text-transform:uppercase;letter-spacing:0.5px;">${escapeHtml(
         sectionLabel
       )}</h2>
-      <p style="margin:0;font-size:13px;color:#78716C;">Schedule not unlocked or completed for today's IST date.</p>
+      <p style="margin:0;font-size:13px;color:#78716C;">Schedule not unlocked yet for today's Asia/Kolkata date.</p>
     </div>`;
   }
 
+  const ctx = getSharedCurriculumDayContext(track.trackId, track.planDay);
+  const actualSchedule = buildActualScheduleMeta(ctx || {
+    trackId: track.trackId,
+    trackLabel: track.trackLabel,
+    dayNumber: track.planDay,
+    isoDate: track.planDate,
+    dateLabel: track.dateLabel,
+    dayOfWeek: track.dayOfWeek || '',
+    weekNumber: 1,
+    phaseOrModule: track.phaseOrModule,
+    topic: track.topicTitle,
+    objectives: track.learningObjectives,
+    practicalWork: track.practicalExerciseSummary,
+    expectedOutcome: track.dailyGuidance,
+    deliverable: track.practicalExerciseSummary,
+    isDsaRelated: track.trackId === 'dsa'
+  });
+
+  const maxDays = track.trackId === 'main' ? MAIN_TRACK_MAX_DAYS : SUB_TRACK_MAX_DAYS;
+  const pct = Math.min(100, Math.round((track.planDay / maxDays) * 100));
+  const scheduleTarget = track.scheduleTarget || actualSchedule.scheduleTarget;
+  const timetable = track.studyTimetable?.length ? track.studyTimetable : actualSchedule.studyTimetable;
+  const practicalExamples = track.practicalExamples?.length
+    ? track.practicalExamples
+    : [track.practicalExerciseSummary];
+  const revisionNotes = track.revisionNotes?.length
+    ? track.revisionNotes
+    : track.learningObjectives.slice(0, 3);
+  const commonMistakes = track.commonMistakes?.length ? track.commonMistakes : [];
+  const checklistItems = buildTrackChecklistItems(track, completedChecklistMap);
+
   const docsHtml =
     track.officialDocs.length > 0
-      ? `<ul style="margin:6px 0 0;padding-left:18px;font-size:13px;color:#292929;">
-          ${track.officialDocs
-            .map(
-              (doc) =>
-                `<li style="margin-bottom:6px;">
-                  <a href="${escapeHtml(doc.url || '#')}" target="_blank" rel="noopener noreferrer" style="color:#C2410C;font-weight:600;text-decoration:underline;">${escapeHtml(
-                    doc.title
-                  )}</a>
-                  <span style="color:#78716C;font-size:12px;"> (${escapeHtml(doc.sourceLabel)})</span><br/>
-                  <span style="color:#57534E;font-size:12px;">${escapeHtml(doc.description)}</span>
-                </li>`
-            )
-            .join('')}
-        </ul>`
+      ? track.officialDocs
+          .map((doc) => {
+            const safeHref = safeHttpsHref(doc.url);
+            return `
+            <div style="border:1px solid #E0DCD3;border-radius:8px;padding:9px 11px;margin-bottom:8px;background:#FAF8F5;">
+              <div style="font-size:12px;font-weight:700;color:#292929;margin-bottom:2px;">
+                ${
+                  safeHref
+                    ? `<a href="${safeHref}" target="_blank" rel="noopener noreferrer" style="color:#C2410C;text-decoration:underline;">${escapeHtml(
+                        doc.title
+                      )} &rarr;</a>`
+                    : escapeHtml(doc.title)
+                }
+              </div>
+              <div style="font-size:11px;color:#78716C;margin-bottom:2px;">${escapeHtml(doc.sourceLabel)}</div>
+              <div style="font-size:11px;color:#57534E;line-height:1.4;">${escapeHtml(doc.description)}</div>
+            </div>`;
+          })
+          .join('')
       : '<p style="margin:4px 0;font-size:12px;color:#78716C;">Refer to today\'s syllabus deliverables.</p>';
 
   return `
-  <div style="background:#FFFFFF;border:1px solid #E0DCD3;border-radius:14px;padding:20px;margin-bottom:20px;">
-    <div style="border-bottom:1px solid #E0DCD3;padding-bottom:12px;margin-bottom:14px;">
-      <div style="font-size:11px;font-weight:700;color:#E7826D;text-transform:uppercase;letter-spacing:0.8px;">${escapeHtml(
-        sectionLabel
-      )} &middot; DAY ${track.planDay} (${escapeHtml(track.dateLabel)})</div>
-      <h2 style="margin:4px 0 4px;font-size:18px;color:#292929;">${escapeHtml(track.topicTitle)}</h2>
-      <div style="font-size:12px;color:#78716C;">${escapeHtml(track.phaseOrModule)}</div>
+  <!-- TRACK SECTION: ${escapeHtml(track.trackLabel)} -->
+  <div style="margin-bottom:22px;">
+    <!-- Preparation Identity Card -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#FAF8F5;border:1px solid #E0DCD3;border-radius:14px;margin-bottom:14px;">
+      <tr>
+        <td style="padding:16px 18px;">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td width="28%" valign="top" style="padding-right:12px;border-right:1px solid #E0DCD3;" class="stack-col">
+                <div style="font-size:24px;font-weight:800;color:#292929;line-height:1.1;">DAY ${track.planDay}</div>
+                <div style="display:inline-block;margin-top:6px;padding:4px 10px;border-radius:999px;background:#E7826D;color:#FFFFFF;font-size:11px;font-weight:800;">
+                  ${escapeHtml(getTrackShortBadgeLabel(track.trackId))}
+                </div>
+              </td>
+              <td width="24%" valign="top" style="padding:0 12px;border-right:1px solid #E0DCD3;" class="stack-col">
+                <div style="font-size:11px;color:#78716C;font-weight:600;">📅 Date</div>
+                <div style="font-size:13px;font-weight:700;color:#292929;margin-top:3px;">${escapeHtml(track.dateLabel)}</div>
+                <div style="font-size:11px;color:#57534E;">(${escapeHtml(track.dayOfWeek || ctx?.dayOfWeek || 'IST')})</div>
+              </td>
+              <td width="23%" valign="top" style="padding:0 12px;border-right:1px solid #E0DCD3;" class="stack-col">
+                <div style="font-size:11px;color:#78716C;font-weight:600;">🕒 Today's Target</div>
+                <div style="font-size:13px;font-weight:700;color:#292929;margin-top:3px;">${escapeHtml(scheduleTarget)}</div>
+              </td>
+              <td width="25%" valign="top" style="padding-left:12px;" class="stack-col">
+                <div style="font-size:11px;color:#78716C;font-weight:600;">🎯 Track Progress</div>
+                <div style="font-size:13px;font-weight:700;color:#292929;margin-top:3px;">${track.planDay} / ${maxDays} Days (${pct}%)</div>
+                <div style="margin-top:6px;background:#E0DCD3;border-radius:999px;height:7px;overflow:hidden;">
+                  <div style="width:${pct}%;background:#E7826D;height:7px;border-radius:999px;"></div>
+                </div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Row 1: Today's Topics + Today's Study Plan -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
+      <tr>
+        <td width="50%" valign="top" style="padding-right:7px;" class="stack-col">
+          <div style="background:#FFFFFF;border:1px solid #E0DCD3;border-radius:14px;overflow:hidden;">
+            <div style="background:#6B4433;color:#F3EFE6;padding:10px 14px;font-size:13px;font-weight:800;">
+              📖 Today's Topics
+            </div>
+            <div style="padding:14px;">
+              <div style="font-size:11px;font-weight:700;color:#E7826D;text-transform:uppercase;margin-bottom:4px;">
+                ${escapeHtml(track.phaseOrModule)}
+              </div>
+              <div style="font-size:16px;font-weight:800;color:#292929;margin-bottom:8px;">
+                ${escapeHtml(track.topicTitle)}
+              </div>
+              <ul style="margin:0;padding-left:18px;font-size:12px;color:#57534E;line-height:1.55;">
+                ${track.learningObjectives.map((obj) => `<li style="margin-bottom:3px;">${escapeHtml(obj)}</li>`).join('')}
+              </ul>
+            </div>
+          </div>
+        </td>
+        <td width="50%" valign="top" style="padding-left:7px;" class="stack-col">
+          <div style="background:#FFFFFF;border:1px solid #E0DCD3;border-radius:14px;overflow:hidden;">
+            <div style="background:#6B4433;color:#F3EFE6;padding:10px 14px;font-size:13px;font-weight:800;">
+              🕒 Today's Study Plan (${escapeHtml(scheduleTarget)})
+            </div>
+            <div style="padding:14px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                ${timetable
+                  .map(
+                    (slot) => `
+                  <tr>
+                    <td width="76" valign="top" style="padding:4px 8px 6px 0;">
+                      <span style="display:inline-block;padding:3px 7px;border-radius:6px;background:#E7826D;color:#FFFFFF;font-size:11px;font-weight:700;white-space:nowrap;">${escapeHtml(
+                        slot.duration
+                      )}</span>
+                    </td>
+                    <td valign="top" style="padding:4px 0 6px;font-size:12px;color:#292929;font-weight:600;line-height:1.35;">
+                      ${escapeHtml(slot.activity)}
+                    </td>
+                  </tr>`
+                  )
+                  .join('')}
+              </table>
+            </div>
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Row 2: AI Learning Summary + Key Takeaways & Revision -->
+    <div style="background:#FFFFFF;border:1px solid #E0DCD3;border-radius:14px;overflow:hidden;margin-bottom:14px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td width="52%" valign="top" style="padding:0;border-right:1px solid #E0DCD3;" class="stack-col">
+            <div style="background:#C26D53;color:#FFFFFF;padding:10px 14px;font-size:13px;font-weight:800;">
+              ✨ AI Learning Summary &amp; Practical Examples
+            </div>
+            <div style="padding:14px;font-size:12px;color:#292929;line-height:1.6;">
+              <p style="margin:0 0 8px;">${escapeHtml(track.topicExplanation)}</p>
+              <div style="background:#FAF8F5;border-left:3px solid #E7826D;padding:8px 10px;border-radius:6px;margin-bottom:6px;">
+                <strong style="display:block;margin-bottom:3px;">Practical Examples &amp; Exercise:</strong>
+                <ul style="margin:0;padding-left:16px;color:#57534E;">
+                  ${practicalExamples.map((ex) => `<li style="margin-bottom:2px;">${escapeHtml(ex)}</li>`).join('')}
+                </ul>
+              </div>
+              <div style="font-size:11px;color:#57534E;">
+                <strong>Deliverable:</strong> ${escapeHtml(track.practicalExerciseSummary)}
+              </div>
+            </div>
+          </td>
+          <td width="48%" valign="top" style="padding:14px;">
+            <div style="font-size:13px;font-weight:800;color:#292929;margin-bottom:8px;">
+              🎯 Key Takeaways &amp; Revision Notes
+            </div>
+            <ul style="margin:0 0 10px;padding-left:18px;font-size:12px;color:#292929;line-height:1.55;">
+              ${revisionNotes.map((note) => `<li style="margin-bottom:4px;">${escapeHtml(note)}</li>`).join('')}
+            </ul>
+            ${
+              commonMistakes.length > 0
+                ? `<div style="background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;padding:8px 10px;font-size:11px;color:#78350F;">
+                    <strong style="display:block;margin-bottom:3px;">⚠️ Avoid Common Mistakes:</strong>
+                    <ul style="margin:0;padding-left:16px;">
+                      ${commonMistakes.map((m) => `<li>${escapeHtml(m)}</li>`).join('')}
+                    </ul>
+                  </div>`
+                : ''
+            }
+          </td>
+        </tr>
+      </table>
     </div>
 
-    <p style="margin:0 0 12px;font-size:13px;line-height:1.55;color:#292929;">
-      <strong>Brief Explanation:</strong> ${escapeHtml(track.topicExplanation)}
-    </p>
-
-    <div style="margin-bottom:14px;">
-      <strong style="font-size:13px;color:#292929;">Suggested Learning Order:</strong>
-      <ol style="margin:6px 0 0;padding-left:20px;font-size:12px;color:#57534E;line-height:1.6;">
-        ${track.suggestedLearningOrder.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}
-      </ol>
-    </div>
-
-    <div style="margin-bottom:14px;">
-      <strong style="font-size:13px;color:#292929;display:block;margin-bottom:8px;">YouTube Tutorials (with Exact Topic Covered):</strong>
-      ${renderYouTubeHtmlList(track.youtubeTutorials)}
-    </div>
+    <!-- Row 3: Learning Resources + YouTube Recommendations -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">
+      <tr>
+        <td width="46%" valign="top" style="padding-right:7px;" class="stack-col">
+          <div style="background:#FFFFFF;border:1px solid #E0DCD3;border-radius:14px;overflow:hidden;">
+            <div style="background:#C26D53;color:#FFFFFF;padding:10px 14px;font-size:13px;font-weight:800;">
+              📚 Learning Resources
+            </div>
+            <div style="padding:12px;">
+              ${docsHtml}
+            </div>
+          </div>
+        </td>
+        <td width="54%" valign="top" style="padding-left:7px;" class="stack-col">
+          <div style="background:#FFFFFF;border:1px solid #E0DCD3;border-radius:14px;overflow:hidden;">
+            <div style="background:#C26D53;color:#FFFFFF;padding:10px 14px;font-size:13px;font-weight:800;">
+              ▶️ YouTube Recommendations
+            </div>
+            <div style="padding:12px;">
+              ${renderYouTubeHtmlList(track.youtubeTutorials)}
+            </div>
+          </div>
+        </td>
+      </tr>
+    </table>
 
     ${
       includeLeetCode
-        ? `<div style="margin-bottom:14px;">
-            <strong style="font-size:13px;color:#292929;display:block;margin-bottom:8px;">Today's 3 DSA LeetCode Questions (1 Easy, 1 Medium, 1 Hard):</strong>
-            ${renderLeetCodeHtmlList(track.leetcodeQuestions)}
+        ? `<!-- DSA Mandatory 3 LeetCode Problems -->
+          <div style="background:#FFFFFF;border:1px solid #E0DCD3;border-radius:14px;overflow:hidden;margin-bottom:14px;">
+            <div style="background:#8D4F3E;color:#FFFFFF;padding:10px 14px;font-size:13px;font-weight:800;">
+              &lt;/&gt; Today's LeetCode Practice (3 Problems: 1 Easy · 1 Medium · 1 Hard)
+            </div>
+            <div style="padding:10px;">
+              ${renderLeetCodeHtmlList(track.leetcodeQuestions)}
+            </div>
           </div>`
         : ''
     }
 
-    <div style="margin-bottom:14px;">
-      <strong style="font-size:13px;color:#292929;">Official Documentation &amp; References:</strong>
-      ${docsHtml}
-    </div>
-
-    <div style="background:#FAF8F5;border-left:3px solid #E7826D;padding:10px 12px;border-radius:6px;font-size:12px;color:#292929;">
-      <strong>Today's Actionable Task / Exercise:</strong> ${escapeHtml(track.practicalExerciseSummary)}
-    </div>
+    <!-- Row 4: Today's Checklist + Daily Motivation -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td width="52%" valign="top" style="padding-right:7px;" class="stack-col">
+          <div style="background:#FFFFFF;border:1px solid #E0DCD3;border-radius:14px;overflow:hidden;">
+            <div style="background:#C26D53;color:#FFFFFF;padding:10px 14px;font-size:13px;font-weight:800;">
+              ☑️ Today's Checklist
+            </div>
+            <div style="padding:12px 14px;font-size:12px;color:#292929;">
+              ${checklistItems
+                .map(
+                  (item) => `
+                <div style="padding:5px 0;border-bottom:1px solid #F3EFE6;">
+                  <span style="display:inline-block;width:16px;font-weight:800;color:${
+                    item.checked ? '#047857' : '#78716C'
+                  };">${item.checked ? '☑' : '☐'}</span>
+                  <span style="${item.checked ? 'text-decoration:line-through;color:#78716C;' : ''}">${escapeHtml(
+                    item.label
+                  )}</span>
+                </div>`
+                )
+                .join('')}
+            </div>
+          </div>
+        </td>
+        <td width="48%" valign="top" style="padding-left:7px;" class="stack-col">
+          <div style="background:#F7EBE4;border:1px solid #E7826D;border-radius:14px;overflow:hidden;">
+            <div style="background:#C26D53;color:#FFFFFF;padding:10px 14px;font-size:13px;font-weight:800;">
+              🏔️ Daily Motivation
+            </div>
+            <div style="padding:16px 14px;font-size:13px;font-style:italic;font-weight:600;color:#292929;line-height:1.55;">
+              ${escapeHtml(getTrackMotivationQuote(track))}
+            </div>
+          </div>
+        </td>
+      </tr>
+    </table>
   </div>`;
 }
 
 export function buildDailyEmailContent(
   payload: CanonicalDailyDashboardPayload,
-  appUrlOverride?: string
+  appUrlOverride?: string,
+  options?: {
+    track?: SharedTrackId;
+    completedChecklistMap?: Record<string, boolean>;
+  }
 ) {
-  const appUrl = (appUrlOverride || DEFAULT_APP_URL).trim() || DEFAULT_APP_URL;
-  const subject = `Steeven's Daily AI Learning Resources — ${payload.istDateLabel}`;
+  const rawAppUrl = (appUrlOverride || DEFAULT_APP_URL).trim() || DEFAULT_APP_URL;
+  const appUrl = isValidHttpsUrl(rawAppUrl) ? rawAppUrl : DEFAULT_APP_URL;
+  const singleTrack = options?.track ? payload.tracks[options.track] : null;
+
+  const subject = singleTrack
+    ? `🚀 Steeven, Your Day ${singleTrack.planDay} ${getTrackShortBadgeLabel(
+        singleTrack.trackId
+      )} Preparation Plan Is Ready!`
+    : `🚀 Steeven, Your Day ${payload.unlockedDays.main} Preparation Plan Is Ready! (${payload.istDateLabel})`;
+
+  const trackSectionsHtml = options?.track
+    ? renderTrackSectionHtml(
+        singleTrack?.trackLabel || options.track.toUpperCase(),
+        singleTrack,
+        options.track === 'dsa',
+        options.completedChecklistMap
+      )
+    : [
+        renderTrackSectionHtml(
+          'MAIN PLAN — 180 DAYS',
+          payload.tracks.main,
+          false,
+          options?.completedChecklistMap
+        ),
+        renderTrackSectionHtml(
+          'DSA IN C++ — 100 DAYS',
+          payload.tracks.dsa,
+          true,
+          options?.completedChecklistMap
+        ),
+        renderTrackSectionHtml(
+          'AZURE ALTERNATE — 100 DAYS',
+          payload.tracks.azure,
+          false,
+          options?.completedChecklistMap
+        )
+      ].join('');
+
+  const subtitleDaysSummary = singleTrack
+    ? `${singleTrack.trackLabel} · Day ${singleTrack.planDay} · ${singleTrack.dateLabel}`
+    : `Main Plan: Day ${payload.unlockedDays.main}/180 · DSA in C++: Day ${payload.unlockedDays.dsa}/100 · Azure: Day ${payload.unlockedDays.azure}/100`;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1130,59 +1789,79 @@ export function buildDailyEmailContent(
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${escapeHtml(subject)}</title>
+  <style>
+    @media only screen and (max-width: 640px) {
+      .stack-col {
+        display: block !important;
+        width: 100% !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        padding-bottom: 10px !important;
+        border-right: none !important;
+      }
+    }
+  </style>
 </head>
 <body style="margin:0;padding:0;background:#F3EFE6;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#292929;">
-  <div style="max-width:720px;margin:0 auto;padding:24px 16px;">
-    <div style="background:#292929;color:#F3EFE6;border-radius:14px;padding:22px 24px;margin-bottom:20px;">
-      <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#E7826D;">
-        STEEVEN'S 180-DAY PREPARATION TRACKER &middot; 10:00 AM IST BRIEF
+  <div style="max-width:720px;margin:0 auto;padding:18px 12px;">
+    <!-- Branded Dark Electric Black Header -->
+    <div style="background:#292929;color:#F3EFE6;border-radius:16px 16px 8px 8px;padding:22px 24px;border-bottom:4px solid #E7826D;">
+      <div style="font-size:18px;font-weight:800;letter-spacing:0.4px;color:#F3EFE6;">
+        📘 STEEVEN'S 180-DAY PREPARATION TRACKER
       </div>
-      <h1 style="margin:6px 0 6px;font-size:22px;color:#F3EFE6;">Daily AI Learning Resources — ${escapeHtml(
-        payload.istDateLabel
-      )}</h1>
-      <p style="margin:0;font-size:13px;color:#C2BEB5;">
-        Unlocked Schedule Days &mdash; Main Plan: Day ${payload.unlockedDays.main}/180 &middot; DSA in C++: Day ${payload.unlockedDays.dsa}/100 &middot; Azure: Day ${payload.unlockedDays.azure}/100
+      <div style="margin-top:4px;font-size:13px;color:#E0DCD3;">
+        Your Daily Learning Companion 🚀 &nbsp;&middot;&nbsp; ${escapeHtml(subtitleDaysSummary)}
+      </div>
+    </div>
+
+    <!-- Exact Required Main Hero Heading -->
+    <div style="text-align:center;padding:20px 12px 16px;">
+      <h1 style="margin:0 0 6px;font-size:24px;font-weight:800;color:#292929;line-height:1.25;">
+        Steeven, Today You Have This Work! 🚀
+      </h1>
+      <p style="margin:0;font-size:13px;color:#57534E;">
+        Here is your personalized study plan for today (${escapeHtml(payload.istDateLabel)} · Asia/Kolkata). Stay consistent and keep going! 💪
       </p>
     </div>
 
-    ${renderTrackSectionHtml('Section 1: MAIN PLAN — 180 DAYS', payload.tracks.main, false)}
-    ${renderTrackSectionHtml('Section 2: DSA IN C++ (100 DAYS)', payload.tracks.dsa, true)}
-    ${renderTrackSectionHtml('Section 3: AZURE — ALTERNATE PLAN (100 DAYS)', payload.tracks.azure, false)}
+    ${trackSectionsHtml}
 
-    <div style="background:#FFFFFF;border:1px solid #E0DCD3;border-radius:14px;padding:20px;margin-bottom:20px;">
-      <h2 style="margin:0 0 12px;font-size:16px;color:#292929;text-transform:uppercase;letter-spacing:0.5px;">Section 4: TODAY'S ACTION PLAN</h2>
-      <ul style="margin:0 0 12px;padding-left:18px;font-size:13px;line-height:1.6;color:#292929;">
-        <li><strong>What to study first:</strong> ${escapeHtml(payload.actionPlan.studyFirst)}</li>
-        <li><strong>Which tutorials to watch:</strong> ${escapeHtml(payload.actionPlan.tutorialsToWatch)}</li>
-        <li><strong>Which LeetCode questions to solve first:</strong> ${escapeHtml(payload.actionPlan.leetcodeFirst)}</li>
-        <li><strong>Practical exercise to complete:</strong> ${escapeHtml(payload.actionPlan.practicalExercise)}</li>
-      </ul>
-      <strong style="font-size:13px;color:#292929;">Recommended Study Sequence:</strong>
-      <ol style="margin:6px 0 0;padding-left:20px;font-size:12px;color:#57534E;line-height:1.6;">
-        ${payload.actionPlan.sequence.map((s) => `<li>${escapeHtml(s)}</li>`).join('')}
-      </ol>
-    </div>
+    ${
+      !options?.track
+        ? `<!-- Combined Multi-Track Action Plan -->
+          <div style="background:#FFFFFF;border:1px solid #E0DCD3;border-radius:14px;padding:18px;margin-bottom:18px;">
+            <h2 style="margin:0 0 10px;font-size:14px;font-weight:800;color:#292929;text-transform:uppercase;letter-spacing:0.5px;">
+              🧭 Today's Combined Study Sequence
+            </h2>
+            <ul style="margin:0 0 10px;padding-left:18px;font-size:12px;line-height:1.6;color:#292929;">
+              <li><strong>Study First:</strong> ${escapeHtml(payload.actionPlan.studyFirst)}</li>
+              <li><strong>Watch Tutorials:</strong> ${escapeHtml(payload.actionPlan.tutorialsToWatch)}</li>
+              <li><strong>Solve LeetCode:</strong> ${escapeHtml(payload.actionPlan.leetcodeFirst)}</li>
+              <li><strong>Practical Exercise:</strong> ${escapeHtml(payload.actionPlan.practicalExercise)}</li>
+            </ul>
+            <ol style="margin:0;padding-left:20px;font-size:12px;color:#57534E;line-height:1.6;">
+              ${payload.actionPlan.sequence.map((s) => `<li>${escapeHtml(s)}</li>`).join('')}
+            </ol>
+          </div>`
+        : ''
+    }
 
-    <div style="background:#292929;border-radius:14px;padding:22px;text-align:center;margin-bottom:18px;">
-      <div style="font-size:11px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:#E7826D;margin-bottom:6px;">
-        Section 5: OPEN PREPARATION TRACKER
-      </div>
-      <p style="margin:0 0 14px;font-size:13px;color:#E0DCD3;">
-        Open the Preparation Tracker to mark tasks complete, track timers, and log notes.
-      </p>
-      <a href="${escapeHtml(appUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:12px 24px;border-radius:10px;background:#E7826D;color:#292929;text-decoration:none;font-size:14px;font-weight:800;">
-        Open Steeven's Preparation Tracker &rarr;
+    <!-- Prominent Dashboard CTA -->
+    <div style="text-align:center;padding:8px 0 20px;">
+      <a href="${escapeHtml(appUrl)}" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:14px 30px;border-radius:999px;background:#E7826D;color:#FFFFFF;text-decoration:none;font-size:15px;font-weight:800;letter-spacing:0.2px;box-shadow:0 3px 10px rgba(231,130,109,0.35);">
+        🚀 Open My Preparation Dashboard &rarr;
       </a>
-      <div style="margin-top:10px;font-size:11px;color:#A8A49C;">
-        ${escapeHtml(appUrl)}
-      </div>
     </div>
 
-    <p style="text-align:center;font-size:11px;color:#78716C;margin:0;">
-      Delivered automatically at 10:00 AM IST via Resend Free Tier to ${escapeHtml(
-        payload.automation.recipientEmail
-      )}.
-    </p>
+    <!-- Dark Electric Black Footer -->
+    <div style="background:#292929;color:#E0DCD3;border-radius:12px;padding:16px 18px;text-align:center;">
+      <div style="font-size:12px;font-weight:800;color:#F3EFE6;letter-spacing:0.4px;">
+        STEEVEN'S 180-DAY PREPARATION TRACKER
+      </div>
+      <div style="font-size:11px;color:#A8A49C;margin-top:4px;">
+        Daily Learning Report | Asia/Kolkata (IST) | Keep Learning · Keep Practicing · Keep Growing 🚀
+      </div>
+    </div>
   </div>
 </body>
 </html>`;
@@ -1206,22 +1885,33 @@ export function buildDailyEmailContent(
           .join('\n')
       : '';
     const docsText = t.officialDocs.map((d) => `  - ${d.title}: ${d.url}`).join('\n');
-    return `=== ${label} (Day ${t.planDay} — ${t.dateLabel}) ===\nTopic: ${t.topicTitle}\nExplanation: ${t.topicExplanation}\nYouTube Tutorials:\n${ytText}${lcText}\nOfficial Docs:\n${docsText}\nActionable Task: ${t.practicalExerciseSummary}\n`;
+    const checklistText = buildTrackChecklistItems(t, options?.completedChecklistMap)
+      .map((c) => `  [${c.checked ? 'x' : ' '}] ${c.label}`)
+      .join('\n');
+    return `=== ${label} (Day ${t.planDay} — ${t.dateLabel}) ===\nTopic: ${t.topicTitle}\nExplanation: ${t.topicExplanation}\nYouTube Tutorials:\n${ytText}${lcText}\nOfficial Docs:\n${docsText}\nActionable Task: ${t.practicalExerciseSummary}\nChecklist:\n${checklistText}\n`;
   };
+
+  const textSections = options?.track
+    ? [formatTrackText(options.track.toUpperCase(), singleTrack, options.track === 'dsa')]
+    : [
+        formatTrackText('MAIN PLAN — 180 DAYS', payload.tracks.main, false),
+        formatTrackText('DSA IN C++ (100 DAYS)', payload.tracks.dsa, true),
+        formatTrackText('AZURE — ALTERNATE PLAN (100 DAYS)', payload.tracks.azure, false),
+        "=== TODAY'S ACTION PLAN ===",
+        `- Study First: ${payload.actionPlan.studyFirst}`,
+        `- Watch Tutorials: ${payload.actionPlan.tutorialsToWatch}`,
+        `- Solve LeetCode: ${payload.actionPlan.leetcodeFirst}`,
+        `- Practical Exercise: ${payload.actionPlan.practicalExercise}`
+      ];
 
   const text = [
     subject,
+    "Steeven, Today You Have This Work! 🚀",
     '',
-    formatTrackText('SECTION 1: MAIN PLAN — 180 DAYS', payload.tracks.main, false),
-    formatTrackText('SECTION 2: DSA IN C++ (100 DAYS)', payload.tracks.dsa, true),
-    formatTrackText('SECTION 3: AZURE — ALTERNATE PLAN (100 DAYS)', payload.tracks.azure, false),
-    "=== SECTION 4: TODAY'S ACTION PLAN ===",
-    `- Study First: ${payload.actionPlan.studyFirst}`,
-    `- Watch Tutorials: ${payload.actionPlan.tutorialsToWatch}`,
-    `- Solve LeetCode: ${payload.actionPlan.leetcodeFirst}`,
-    `- Practical Exercise: ${payload.actionPlan.practicalExercise}`,
+    ...textSections,
     '',
-    `=== SECTION 5: OPEN PREPARATION TRACKER ===\n${appUrl}`
+    `Open My Preparation Dashboard: ${appUrl}`,
+    'STEEVEN\'S 180-DAY PREPARATION TRACKER | Asia/Kolkata (IST)'
   ].join('\n');
 
   return { subject, html, text, appUrl };
@@ -1234,12 +1924,25 @@ export interface EmailDeliveryResult {
   subject: string;
   providerMessageId?: string | null;
   errorMessage?: string | null;
+  attempts?: number;
+  idempotencyKey?: string;
+}
+
+function sanitizeEmailError(message: string): string {
+  return message
+    .replace(/\bre_[A-Za-z0-9_-]{8,}\b/g, 're_***')
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, 'Bearer ***');
 }
 
 export async function sendDailyEmailViaResend(
   payload: CanonicalDailyDashboardPayload,
   config: PipelineEnvConfig,
-  options?: { idempotencySuffix?: string }
+  options?: {
+    idempotencySuffix?: string;
+    fetchImpl?: typeof fetch;
+    maxAttempts?: number;
+    retryDelayMs?: number;
+  }
 ): Promise<EmailDeliveryResult> {
   const recipientEmail =
     (config.dailyRecipientEmail || DEFAULT_DAILY_RECIPIENT).trim() || DEFAULT_DAILY_RECIPIENT;
@@ -1254,6 +1957,7 @@ export async function sendDailyEmailViaResend(
       recipientEmail,
       subject,
       providerMessageId: null,
+      attempts: 0,
       errorMessage:
         'RESEND_API_KEY is not configured. Add a Resend Free Tier API key to enable 10:00 AM IST email delivery.'
     };
@@ -1266,6 +1970,7 @@ export async function sendDailyEmailViaResend(
       recipientEmail,
       subject,
       providerMessageId: null,
+      attempts: 0,
       errorMessage:
         'RESEND_FROM_EMAIL is not configured. Set a Resend-verified sender address.'
     };
@@ -1274,87 +1979,146 @@ export async function sendDailyEmailViaResend(
   const idempotencyKey = options?.idempotencySuffix
     ? `steeven-daily-${payload.istDate}-${options.idempotencySuffix}`
     : `steeven-daily-${payload.istDate}`;
+  const fetchFn = options?.fetchImpl || config.fetchImpl || fetch;
+  const maxAttempts = Math.max(1, Math.min(4, options?.maxAttempts ?? 3));
+  const baseRetryDelayMs = Math.max(0, options?.retryDelayMs ?? 300);
 
-  try {
-    const resp = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-        'Idempotency-Key': idempotencyKey
-      },
-      body: JSON.stringify({
-        from: fromEmail,
-        to: [recipientEmail],
-        subject,
-        html,
-        text
-      }),
-      signal: AbortSignal.timeout(10000)
-    });
+  let lastErrorMessage = 'Network error sending email via Resend.';
+  let lastSenderIssue = false;
 
-    const respJson = (await resp.json().catch(() => ({}))) as {
-      id?: string;
-      message?: string;
-    };
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const resp = await fetchFn('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: [recipientEmail],
+          subject,
+          html,
+          text
+        }),
+        signal: AbortSignal.timeout(10000)
+      });
 
-    if (!resp.ok) {
-      const msg = respJson.message || `Resend returned HTTP ${resp.status}`;
-      const isSenderIssue =
-        resp.status === 403 ||
-        msg.toLowerCase().includes('verify') ||
-        msg.toLowerCase().includes('domain');
+      const respJson = (await resp.json().catch(() => ({}))) as {
+        id?: string;
+        message?: string;
+      };
+
+      if (!resp.ok) {
+        const msg = sanitizeEmailError(respJson.message || `Resend returned HTTP ${resp.status}`);
+        const isSenderIssue =
+          resp.status === 403 ||
+          msg.toLowerCase().includes('verify') ||
+          msg.toLowerCase().includes('domain');
+        lastErrorMessage = msg;
+        lastSenderIssue = isSenderIssue;
+
+        const isTransient = resp.status === 429 || resp.status >= 500;
+        if (isTransient && attempt < maxAttempts) {
+          if (baseRetryDelayMs > 0) {
+            await new Promise((resolve) => setTimeout(resolve, baseRetryDelayMs * attempt));
+          }
+          continue;
+        }
+
+        return {
+          sent: false,
+          emailStatus: isSenderIssue ? 'awaiting_sender_verification' : 'failed',
+          recipientEmail,
+          subject,
+          providerMessageId: null,
+          attempts: attempt,
+          idempotencyKey,
+          errorMessage: msg
+        };
+      }
+
+      if (!respJson.id) {
+        return {
+          sent: false,
+          emailStatus: 'failed',
+          recipientEmail,
+          subject,
+          providerMessageId: null,
+          attempts: attempt,
+          idempotencyKey,
+          errorMessage: 'Resend did not return a confirmed message ID.'
+        };
+      }
 
       return {
-        sent: false,
-        emailStatus: isSenderIssue ? 'awaiting_sender_verification' : 'failed',
+        sent: true,
+        emailStatus: 'sent',
         recipientEmail,
         subject,
-        providerMessageId: null,
-        errorMessage: msg
+        providerMessageId: respJson.id,
+        attempts: attempt,
+        idempotencyKey,
+        errorMessage: null
       };
+    } catch (err) {
+      lastErrorMessage = sanitizeEmailError(
+        err instanceof Error ? err.message : 'Network error sending email via Resend.'
+      );
+      lastSenderIssue = false;
+      if (attempt < maxAttempts) {
+        if (baseRetryDelayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, baseRetryDelayMs * attempt));
+        }
+        continue;
+      }
     }
-
-    if (!respJson.id) {
-      return {
-        sent: false,
-        emailStatus: 'failed',
-        recipientEmail,
-        subject,
-        providerMessageId: null,
-        errorMessage: 'Resend did not return a confirmed message ID.'
-      };
-    }
-
-    return {
-      sent: true,
-      emailStatus: 'sent',
-      recipientEmail,
-      subject,
-      providerMessageId: respJson.id,
-      errorMessage: null
-    };
-  } catch (err) {
-    return {
-      sent: false,
-      emailStatus: 'failed',
-      recipientEmail,
-      subject,
-      providerMessageId: null,
-      errorMessage: err instanceof Error ? err.message : 'Network error sending email via Resend.'
-    };
   }
+
+  return {
+    sent: false,
+    emailStatus: lastSenderIssue ? 'awaiting_sender_verification' : 'failed',
+    recipientEmail,
+    subject,
+    providerMessageId: null,
+    attempts: maxAttempts,
+    idempotencyKey,
+    errorMessage: lastErrorMessage
+  };
 }
 
 // =========================================================================
 // SUPABASE REST PERSISTENCE & READS (SHARED BY EDGE, EXPRESS, VERCEL)
+// Supports both legacy service_role JWTs and new sb_secret_ keys safely.
 // =========================================================================
+export function buildSupabaseRestHeadersCanonical(
+  serviceKey: string,
+  extraHeaders: Record<string, string> = {}
+): Record<string, string> {
+  const trimmed = serviceKey.trim();
+  const isJwt = Boolean(trimmed && trimmed.split('.').length === 3 && trimmed.startsWith('eyJ'));
+  if (isJwt) {
+    return {
+      apikey: trimmed,
+      Authorization: `Bearer ${trimmed}`,
+      ...extraHeaders
+    };
+  }
+  return {
+    apikey: trimmed,
+    ...extraHeaders
+  };
+}
+
+const SUPABASE_UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export function isSupabaseServerConfigured(config: PipelineEnvConfig): boolean {
-  return Boolean(
-    config.supabaseUrl?.trim() &&
-      config.supabaseServiceRoleKey?.trim() &&
-      config.ownerUserId?.trim()
-  );
+  const url = config.supabaseUrl?.trim() || '';
+  const key = config.supabaseServiceRoleKey?.trim() || '';
+  const ownerId = config.ownerUserId?.trim() || '';
+  return Boolean(url && key && ownerId && SUPABASE_UUID_REGEX.test(ownerId));
 }
 
 export async function syncTrackResourcesToSupabase(
@@ -1368,44 +2132,67 @@ export async function syncTrackResourcesToSupabase(
   const ownerUserId = config.ownerUserId!.trim();
   const fetchFn = config.fetchImpl || fetch;
 
-  const headers = {
-    apikey: serviceKey,
-    Authorization: `Bearer ${serviceKey}`,
+  const headers = buildSupabaseRestHeadersCanonical(serviceKey, {
     'Content-Type': 'application/json',
     Prefer: 'resolution=merge-duplicates,return=minimal'
+  });
+
+  const baseBriefRow = {
+    user_id: ownerUserId,
+    track_id: resource.trackId,
+    plan_day: resource.planDay,
+    plan_date: resource.planDate,
+    topic_title: resource.topicTitle,
+    phase_or_module: resource.phaseOrModule,
+    topic_explanation: resource.topicExplanation,
+    learning_objectives: resource.learningObjectives,
+    suggested_learning_order: resource.suggestedLearningOrder,
+    daily_guidance: resource.dailyGuidance,
+    practical_exercise_summary: resource.practicalExerciseSummary,
+    leetcode_triplet: resource.trackId === 'dsa' ? resource.leetcodeQuestions : [],
+    status: resource.status,
+    status_message: resource.statusMessage,
+    ai_provider_status: resource.aiProviderStatus,
+    youtube_provider_status: resource.youtubeProviderStatus,
+    model_used: resource.modelUsed || null,
+    updated_at: resource.updatedAt
+  };
+
+  const extendedBriefRow = {
+    ...baseBriefRow,
+    practical_examples: resource.practicalExamples || [],
+    revision_notes: resource.revisionNotes || [],
+    common_mistakes: resource.commonMistakes || [],
+    schedule_meta: {
+      dayOfWeek: resource.dayOfWeek,
+      scheduleTarget: resource.scheduleTarget,
+      studyTimetable: resource.studyTimetable || []
+    }
   };
 
   try {
-    const briefResp = await fetchFn(
+    let briefResp = await fetchFn(
       `${baseUrl}/rest/v1/daily_learning_briefs?on_conflict=user_id,track_id,plan_day`,
       {
         method: 'POST',
         headers,
-        body: JSON.stringify([
-          {
-            user_id: ownerUserId,
-            track_id: resource.trackId,
-            plan_day: resource.planDay,
-            plan_date: resource.planDate,
-            topic_title: resource.topicTitle,
-            phase_or_module: resource.phaseOrModule,
-            topic_explanation: resource.topicExplanation,
-            learning_objectives: resource.learningObjectives,
-            suggested_learning_order: resource.suggestedLearningOrder,
-            daily_guidance: resource.dailyGuidance,
-            practical_exercise_summary: resource.practicalExerciseSummary,
-            leetcode_triplet: resource.trackId === 'dsa' ? resource.leetcodeQuestions : [],
-            status: resource.status,
-            status_message: resource.statusMessage,
-            ai_provider_status: resource.aiProviderStatus,
-            youtube_provider_status: resource.youtubeProviderStatus,
-            model_used: resource.modelUsed || null,
-            updated_at: resource.updatedAt
-          }
-        ]),
+        body: JSON.stringify([extendedBriefRow]),
         signal: AbortSignal.timeout(6000)
       }
     );
+
+    // Graceful backward compatibility if additive 20261118 columns are not yet applied in Supabase
+    if (!briefResp.ok && (briefResp.status === 400 || briefResp.status === 404)) {
+      briefResp = await fetchFn(
+        `${baseUrl}/rest/v1/daily_learning_briefs?on_conflict=user_id,track_id,plan_day`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify([baseBriefRow]),
+          signal: AbortSignal.timeout(6000)
+        }
+      );
+    }
 
     const rawRows = [
       ...resource.youtubeTutorials.map((yt) => ({
@@ -1425,6 +2212,7 @@ export async function syncTrackResourcesToSupabase(
         duration: yt.duration || null,
         language: yt.language || 'en',
         is_verified: yt.isVerifiedVideo,
+        thumbnail_url: yt.thumbnailUrl || null,
         updated_at: resource.updatedAt
       })),
       ...resource.officialDocs.map((doc) => ({
@@ -1444,6 +2232,7 @@ export async function syncTrackResourcesToSupabase(
         duration: null,
         language: 'en',
         is_verified: doc.isVerifiedUrl,
+        thumbnail_url: null,
         updated_at: resource.updatedAt
       })),
       ...resource.practicalExercises.map((ex, idx) => ({
@@ -1465,6 +2254,7 @@ export async function syncTrackResourcesToSupabase(
         duration: null,
         language: 'en',
         is_verified: ex.isVerifiedUrl,
+        thumbnail_url: null,
         updated_at: resource.updatedAt
       })),
       ...(resource.trackId === 'dsa'
@@ -1487,6 +2277,7 @@ export async function syncTrackResourcesToSupabase(
               duration: null,
               language: 'en',
               is_verified: q.isVerified,
+              thumbnail_url: null,
               updated_at: resource.updatedAt
             }))
         : [])
@@ -1500,7 +2291,7 @@ export async function syncTrackResourcesToSupabase(
 
     let resOk = true;
     if (resourceRows.length > 0) {
-      const resResp = await fetchFn(
+      let resResp = await fetchFn(
         `${baseUrl}/rest/v1/daily_learning_resources?on_conflict=user_id,track_id,plan_day,resource_type,url`,
         {
           method: 'POST',
@@ -1509,6 +2300,18 @@ export async function syncTrackResourcesToSupabase(
           signal: AbortSignal.timeout(6000)
         }
       );
+      if (!resResp.ok && (resResp.status === 400 || resResp.status === 404)) {
+        const legacyRows = resourceRows.map(({ thumbnail_url: _t, ...rest }) => rest);
+        resResp = await fetchFn(
+          `${baseUrl}/rest/v1/daily_learning_resources?on_conflict=user_id,track_id,plan_day,resource_type,url`,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(legacyRows),
+            signal: AbortSignal.timeout(6000)
+          }
+        );
+      }
       resOk = resResp.ok;
     }
 
@@ -1545,12 +2348,10 @@ export async function syncAutomationRunToSupabase(
   try {
     const resp = await fetchFn(`${baseUrl}/rest/v1/daily_automation_runs?on_conflict=run_key`, {
       method: 'POST',
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`,
+      headers: buildSupabaseRestHeadersCanonical(serviceKey, {
         'Content-Type': 'application/json',
         Prefer: 'resolution=merge-duplicates,return=minimal'
-      },
+      }),
       body: JSON.stringify([
         {
           run_key: run.runKey,
@@ -1584,6 +2385,14 @@ interface SupabaseBriefRow {
   phase_or_module: string;
   topic_explanation: string;
   learning_objectives: string[];
+  practical_examples?: string[];
+  revision_notes?: string[];
+  common_mistakes?: string[];
+  schedule_meta?: {
+    dayOfWeek?: string;
+    scheduleTarget?: string;
+    studyTimetable?: CanonicalTimetableSlot[];
+  };
   suggested_learning_order: string[];
   daily_guidance: string;
   practical_exercise_summary: string;
@@ -1610,6 +2419,7 @@ interface SupabaseResourceRow {
   duration?: string | null;
   language?: string;
   is_verified: boolean;
+  thumbnail_url?: string | null;
 }
 
 interface SupabaseAutomationRunRow {
@@ -1641,10 +2451,7 @@ export async function fetchTrackBriefFromSupabase(
   const serviceKey = config.supabaseServiceRoleKey!.trim();
   const ownerUserId = config.ownerUserId!.trim();
   const fetchFn = config.fetchImpl || fetch;
-  const headers = {
-    apikey: serviceKey,
-    Authorization: `Bearer ${serviceKey}`
-  };
+  const headers = buildSupabaseRestHeadersCanonical(serviceKey);
 
   try {
     const [briefResp, resResp] = await Promise.all([
@@ -1677,12 +2484,16 @@ export async function fetchTrackBriefFromSupabase(
       youtubeRows.length > 0
         ? youtubeRows.map((yt, idx) => {
             const videoIdMatch = /[?&]v=([a-zA-Z0-9_-]{11})/.exec(yt.url || '');
+            const vid = videoIdMatch?.[1];
             return {
               id: `yt_${trackId}_d${dayNumber}_sb_${idx + 1}`,
               title: yt.title,
               channelName: yt.channel_or_source,
               url: yt.url,
-              videoId: videoIdMatch?.[1],
+              videoId: vid,
+              thumbnailUrl:
+                yt.thumbnail_url ||
+                (yt.is_verified && vid ? `https://i.ytimg.com/vi/${vid}/hqdefault.jpg` : undefined),
               topicCovered: yt.topic_covered,
               explanation: yt.description,
               whyUseful: yt.why_useful,
@@ -1736,19 +2547,30 @@ export async function fetchTrackBriefFromSupabase(
             }
           ];
 
+    const actualSchedule = buildActualScheduleMeta(ctx);
+
     return {
       trackId,
       trackLabel: ctx.trackLabel,
       planDay: dayNumber,
       planDate: ctx.isoDate,
       dateLabel: ctx.dateLabel,
+      dayOfWeek: brief.schedule_meta?.dayOfWeek || ctx.dayOfWeek,
       topicTitle: ctx.topic,
       phaseOrModule: brief.phase_or_module || ctx.phaseOrModule,
+      scheduleTarget: brief.schedule_meta?.scheduleTarget || actualSchedule.scheduleTarget,
+      studyTimetable:
+        brief.schedule_meta?.studyTimetable && brief.schedule_meta.studyTimetable.length > 0
+          ? brief.schedule_meta.studyTimetable
+          : actualSchedule.studyTimetable,
       learningObjectives:
         Array.isArray(brief.learning_objectives) && brief.learning_objectives.length > 0
           ? brief.learning_objectives
           : ctx.objectives,
       topicExplanation: brief.topic_explanation,
+      practicalExamples: Array.isArray(brief.practical_examples) ? brief.practical_examples : [],
+      revisionNotes: Array.isArray(brief.revision_notes) ? brief.revision_notes : [],
+      commonMistakes: Array.isArray(brief.common_mistakes) ? brief.common_mistakes : [],
       suggestedLearningOrder: Array.isArray(brief.suggested_learning_order)
         ? brief.suggested_learning_order
         : [],
@@ -1789,10 +2611,7 @@ export async function fetchLatestAutomationRunFromSupabase(
         )}&order=ran_at.desc&limit=1`;
 
     const resp = await fetchFn(query, {
-      headers: {
-        apikey: serviceKey,
-        Authorization: `Bearer ${serviceKey}`
-      },
+      headers: buildSupabaseRestHeadersCanonical(serviceKey),
       signal: AbortSignal.timeout(5000)
     });
 
@@ -1824,7 +2643,7 @@ export async function fetchLatestAutomationRunFromSupabase(
 // =========================================================================
 export function getMissingSecretsList(config: PipelineEnvConfig): string[] {
   const missing: string[] = [];
-  if (!config.geminiApiKey?.trim()) missing.push('GEMINI_API_KEY');
+  if (!config.geminiApiKey?.trim()) missing.push('PREPARATION_GEMINI_KEY');
   if (!config.youtubeApiKey?.trim()) missing.push('YOUTUBE_API_KEY');
   if (!config.resendApiKey?.trim()) missing.push('RESEND_API_KEY');
   if (!config.resendFromEmail?.trim()) missing.push('RESEND_FROM_EMAIL');
@@ -1840,6 +2659,7 @@ export function buildDeterministicReadOnlyTrack(
   const ctx = getSharedCurriculumDayContext(trackId, dayNumber);
   if (!ctx) return null;
 
+  const actualSchedule = buildActualScheduleMeta(ctx);
   const tutorials = buildSearchFallbackTutorials(ctx);
   const docs = getSharedOfficialDocs(trackId, dayNumber);
 
@@ -1868,7 +2688,7 @@ export function buildDeterministicReadOnlyTrack(
   const statusNotes = [
     hasGemini
       ? 'Awaiting daily automation refresh for live AI & YouTube enrichment.'
-      : 'Curriculum, official docs, and LeetCode loaded; GEMINI_API_KEY needed for AI enrichment.',
+      : 'Curriculum, official docs, and LeetCode loaded; PREPARATION_GEMINI_KEY needed for AI enrichment.',
     'Displaying clearly labelled YouTube topic search links without inventing video IDs.'
   ];
   if (leetcodeWarning) statusNotes.push(leetcodeWarning);
@@ -1879,10 +2699,16 @@ export function buildDeterministicReadOnlyTrack(
     planDay: dayNumber,
     planDate: ctx.isoDate,
     dateLabel: ctx.dateLabel,
+    dayOfWeek: ctx.dayOfWeek,
     topicTitle: ctx.topic,
     phaseOrModule: ctx.phaseOrModule,
+    scheduleTarget: actualSchedule.scheduleTarget,
+    studyTimetable: actualSchedule.studyTimetable,
     learningObjectives: fallback.learningObjectives,
     topicExplanation: fallback.topicExplanation,
+    practicalExamples: fallback.practicalExamples,
+    revisionNotes: fallback.revisionNotes,
+    commonMistakes: fallback.commonMistakes,
     suggestedLearningOrder: fallback.suggestedLearningOrder,
     dailyGuidance: fallback.dailyGuidance,
     practicalExerciseSummary: fallback.practicalExerciseSummary,
@@ -1924,9 +2750,27 @@ export async function generateTrackDailyCanonical(
   }
 
   const existingCached = options?.existingCached || undefined;
+  const hasYoutubeKey = Boolean(config.youtubeApiKey?.trim());
+  const hasGeminiKey = Boolean(config.geminiApiKey?.trim());
+
+  // Avoid unnecessary regeneration & quota burn when valid AI/YouTube resources already exist
   if (!options?.forceRefresh && existingCached) {
+    const aiComplete = !hasGeminiKey || existingCached.aiProviderStatus === 'gemini_generated';
+    const ytComplete = !hasYoutubeKey || existingCached.youtubeProviderStatus === 'youtube_api_verified';
     const ageMs = Date.now() - new Date(existingCached.updatedAt).getTime();
-    if (Number.isFinite(ageMs) && ageMs < 12 * 60 * 60 * 1000) {
+    const recentTransientCooldown =
+      Number.isFinite(ageMs) &&
+      ageMs < 3 * 60 * 1000 &&
+      (existingCached.aiProviderStatus === 'quota_exhausted_cached' ||
+        existingCached.aiProviderStatus === 'unavailable');
+
+    if (
+      (aiComplete && ytComplete) ||
+      (Number.isFinite(ageMs) &&
+        ageMs < 12 * 60 * 60 * 1000 &&
+        existingCached.aiProviderStatus === 'gemini_generated') ||
+      (recentTransientCooldown && ytComplete)
+    ) {
       return {
         ...existingCached,
         status: existingCached.aiProviderStatus === 'gemini_generated' ? 'cached' : existingCached.status
@@ -1934,7 +2778,35 @@ export async function generateTrackDailyCanonical(
     }
   }
 
-  const ytResult = await discoverYouTubeTutorials(ctx, config.youtubeApiKey);
+  const actualSchedule = buildActualScheduleMeta(ctx);
+
+  // Reuse cached verified YouTube videos if YouTube already succeeded or if quota is hit on refresh
+  let ytResult: YouTubeDiscoveryResult;
+  if (
+    !options?.forceRefresh &&
+    existingCached?.youtubeProviderStatus === 'youtube_api_verified' &&
+    existingCached.youtubeTutorials.some((t) => t.isVerifiedVideo)
+  ) {
+    ytResult = {
+      tutorials: existingCached.youtubeTutorials,
+      providerStatus: 'youtube_api_verified',
+      statusNote: 'Using cached verified YouTube tutorials to preserve API quota.'
+    };
+  } else {
+    ytResult = await discoverYouTubeTutorials(ctx, config.youtubeApiKey, config.fetchImpl || fetch);
+    if (
+      ytResult.providerStatus !== 'youtube_api_verified' &&
+      existingCached?.youtubeProviderStatus === 'youtube_api_verified' &&
+      existingCached.youtubeTutorials.some((t) => t.isVerifiedVideo)
+    ) {
+      ytResult = {
+        tutorials: existingCached.youtubeTutorials,
+        providerStatus: 'youtube_api_verified',
+        statusNote: 'Preserved cached verified YouTube tutorials after quota/lookup fallback.'
+      };
+    }
+  }
+
   const docs = await validateOfficialDocs(
     getSharedOfficialDocs(trackId, dayNumber),
     Boolean(options?.skipExternalNetworkChecks)
@@ -1959,7 +2831,8 @@ export async function generateTrackDailyCanonical(
     }
   ];
 
-  const geminiResult = await generateGroundedDailyBrief(
+  const geminiCaller = config.geminiCaller || generateGroundedDailyBrief;
+  const geminiResult = await geminiCaller(
     ctx,
     ytResult.tutorials,
     docs,
@@ -1969,6 +2842,9 @@ export async function generateTrackDailyCanonical(
 
   let finalExplanation: string;
   let finalObjectives: string[];
+  let finalExamples: string[];
+  let finalRevisionNotes: string[];
+  let finalCommonMistakes: string[];
   let finalOrder: string[];
   let finalGuidance: string;
   let finalExerciseSummary: string;
@@ -1994,11 +2870,18 @@ export async function generateTrackDailyCanonical(
     });
     finalExplanation = g.topicExplanation;
     finalObjectives = g.learningObjectives.length > 0 ? g.learningObjectives : ctx.objectives;
+    finalExamples = Array.isArray(g.practicalExamples) ? g.practicalExamples : [];
+    finalRevisionNotes = Array.isArray(g.revisionNotes) ? g.revisionNotes : [];
+    finalCommonMistakes = Array.isArray(g.commonMistakes) ? g.commonMistakes : [];
     finalOrder = g.suggestedLearningOrder.length > 0 ? g.suggestedLearningOrder : [];
     finalGuidance = g.dailyGuidance;
     finalExerciseSummary = g.practicalExerciseSummary;
   } else {
-    aiStatus = geminiResult.aiProviderStatus;
+    const preservedPreviousAi = existingCached?.aiProviderStatus === 'gemini_generated';
+    aiStatus = preservedPreviousAi ? 'gemini_generated' : geminiResult.aiProviderStatus;
+    if (preservedPreviousAi) {
+      modelUsed = existingCached?.modelUsed || FREE_TIER_GEMINI_MODEL;
+    }
     const fallback = buildFallbackBrief(
       ctx,
       ytResult.tutorials,
@@ -2008,6 +2891,9 @@ export async function generateTrackDailyCanonical(
     );
     finalExplanation = fallback.topicExplanation;
     finalObjectives = fallback.learningObjectives;
+    finalExamples = fallback.practicalExamples;
+    finalRevisionNotes = fallback.revisionNotes;
+    finalCommonMistakes = fallback.commonMistakes;
     finalOrder = fallback.suggestedLearningOrder;
     finalGuidance = fallback.dailyGuidance;
     finalExerciseSummary = fallback.practicalExerciseSummary;
@@ -2022,17 +2908,22 @@ export async function generateTrackDailyCanonical(
   if (fullyAiAndYtVerified) {
     status = 'updated';
     statusNotes.push(
-      'Updated successfully with verified YouTube tutorials and Gemini Free Tier insights.'
+      'Updated successfully with verified YouTube tutorials and Gemini AI insights.'
     );
   } else {
     status = 'partially_updated';
     if (aiStatus === 'missing_api_key') {
       statusNotes.push(
-        'Curriculum, official docs, and LeetCode loaded; GEMINI_API_KEY needed for AI enrichment.'
+        'Curriculum, official docs, and LeetCode loaded; PREPARATION_GEMINI_KEY needed for AI enrichment.'
+      );
+    } else if (aiStatus === 'invalid_api_key') {
+      statusNotes.push(
+        geminiResult.errorMessage ||
+          'PREPARATION_GEMINI_KEY is invalid or disabled. Update PREPARATION_GEMINI_KEY in Secrets.'
       );
     } else if (aiStatus === 'quota_exhausted_cached') {
       statusNotes.push(
-        'Gemini Free Tier quota reached; displaying grounded curriculum / cached notes.'
+        'Gemini quota reached; displaying grounded curriculum / cached notes.'
       );
     } else if (aiStatus === 'unavailable') {
       statusNotes.push(geminiResult.errorMessage || 'Gemini enrichment temporarily unavailable.');
@@ -2050,10 +2941,16 @@ export async function generateTrackDailyCanonical(
     planDay: dayNumber,
     planDate: ctx.isoDate,
     dateLabel: ctx.dateLabel,
+    dayOfWeek: ctx.dayOfWeek,
     topicTitle: ctx.topic,
     phaseOrModule: ctx.phaseOrModule,
+    scheduleTarget: actualSchedule.scheduleTarget,
+    studyTimetable: actualSchedule.studyTimetable,
     learningObjectives: finalObjectives,
     topicExplanation: finalExplanation,
+    practicalExamples: finalExamples,
+    revisionNotes: finalRevisionNotes,
+    commonMistakes: finalCommonMistakes,
     suggestedLearningOrder: finalOrder,
     dailyGuidance: finalGuidance,
     practicalExerciseSummary: finalExerciseSummary,

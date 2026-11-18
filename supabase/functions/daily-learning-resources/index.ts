@@ -33,7 +33,7 @@ function getEdgeConfig(): PipelineEnvConfig {
     supabaseUrl: Deno.env.get('SUPABASE_URL')?.trim(),
     supabaseServiceRoleKey: Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim(),
     ownerUserId: Deno.env.get('OWNER_SUPABASE_USER_ID')?.trim(),
-    geminiApiKey: Deno.env.get('GEMINI_API_KEY')?.trim(),
+    geminiApiKey: Deno.env.get('PREPARATION_GEMINI_KEY')?.trim(),
     youtubeApiKey: Deno.env.get('YOUTUBE_API_KEY')?.trim(),
     resendApiKey: Deno.env.get('RESEND_API_KEY')?.trim(),
     resendFromEmail: Deno.env.get('RESEND_FROM_EMAIL')?.trim(),
@@ -273,7 +273,7 @@ Deno.serve(async (req) => {
       automation: buildAutomationStatusSummary(config, finalRun || {
         runKey,
         runDate: snapshot.istDate,
-        ranAt,
+        ranAt: completedAt,
         triggerSource: body.triggerSource || 'supabase_edge_10am_ist',
         overallStatus,
         emailSent,

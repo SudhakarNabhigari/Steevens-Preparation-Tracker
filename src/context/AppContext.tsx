@@ -57,11 +57,24 @@ import {
   saveSharedContent
 } from '../services/storage';
 import {
+  classifySupabaseAuthError,
   configuredOwnerEmail,
   configuredOwnerUserId,
+  getSupabaseOwnerSession,
+  hasPartialSupabaseEnv,
+  isAnonKeySafeForClient,
+  isAuthorizedOwnerUser,
+  isConfiguredOwnerUserIdPlaceholder,
+  isConfiguredOwnerUserIdValid,
   isSupabaseConfigured,
-  supabase
+  requiresStrictServerOwnerVerification,
+  supabase,
+  verifyOwnerSessionWithServer
 } from '../lib/supabase';
+import {
+  loadOrMigrateOwnerProgress,
+  saveOwnerProgressToCloud
+} from '../services/cloudProgress';
 import {
   computeOwnerTransitionVerifier,
   verifyGuestLocalPassword,
@@ -137,6 +150,7 @@ interface AppContextType {
   isSupabaseAuthConfigured: boolean;
   isOwnerSupabaseSessionActive: boolean;
   lastAuthError: string | null;
+  clearAuthError: () => void;
 
   // Main Plan Task & Notes Actions
   toggleTaskCompletion: (dayNumber: number, taskId: string) => void;
@@ -236,10 +250,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [testModeDate, setTestModeDate] = useState<string | null>(null);
   const [isOwnerSupabaseSessionActive, setIsOwnerSupabaseSessionActive] = useState<boolean>(false);
   const [lastAuthError, setLastAuthError] = useState<string | null>(null);
+  const clearAuthError = useCallback(() => setLastAuthError(null), []);
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cloudSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ownerCloudUserIdRef = useRef<string | null>(null);
+  const explicitLogoutRef = useRef<boolean>(false);
+  const authActionInProgressRef = useRef<boolean>(false);
+  const stateRef = useRef<UserState>(state);
+  stateRef.current = state;
 
-  const hydrateAuthenticatedOwnerLocalState = useCallback(() => {
+  const hydrateAuthenticatedOwnerLocalState = useCallback((cloudUserId?: string | null) => {
     const ownerState = loadRoleStateSync('owner');
     ownerState.isAuthenticated = true;
     ownerState.passwordHash = '';
@@ -249,6 +270,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setSelectedAzureDayState(ownerState.azureProgress?.lastActiveDayNumber || 1);
 
     loadFromIndexedDB(OWNER_STORAGE_KEY).then(async dbOwner => {
+      let latestLocal = ownerState;
       if (
         dbOwner &&
         dbOwner.lastSavedTimestamp &&
@@ -258,6 +280,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           { ...dbOwner, passwordHash: '', isAuthenticated: true },
           'owner'
         );
+        latestLocal = hydrated;
         await saveSharedContent(extractSharedContentFromOwner(hydrated));
         setState(prev => (prev.role === 'owner' && prev.isAuthenticated ? hydrated : prev));
         if (hydrated.lastActiveDayNumber) setSelectedDayNumberState(hydrated.lastActiveDayNumber);
@@ -270,6 +293,25 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       } else {
         await saveSharedContent(extractSharedContentFromOwner(ownerState));
       }
+
+      if (cloudUserId && isSupabaseConfigured) {
+        try {
+          const cloudSync = await loadOrMigrateOwnerProgress(cloudUserId, latestLocal);
+          if (cloudSync.state) {
+            const syncedState = hydrateUserState(
+              { ...cloudSync.state, passwordHash: '', isAuthenticated: true },
+              'owner'
+            );
+            await saveRoleStatePermanent(syncedState);
+            await saveSharedContent(extractSharedContentFromOwner(syncedState));
+            setState(prev =>
+              prev.role === 'owner' && prev.isAuthenticated ? syncedState : prev
+            );
+          }
+        } catch {
+          // Local IndexedDB/localStorage Owner progress remains active if cloud sync is temporarily offline
+        }
+      }
     });
   }, []);
 
@@ -278,33 +320,87 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!isSupabaseConfigured || !supabase) return;
 
     let mounted = true;
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (!mounted || error || !data?.session?.user) return;
-      if (configuredOwnerUserId && data.session.user.id !== configuredOwnerUserId) {
-        void supabase?.auth.signOut();
+    (async () => {
+      if (authActionInProgressRef.current) return;
+      const { data, error } = await supabase.auth.getSession();
+      if (!mounted || authActionInProgressRef.current) return;
+
+      if (error) {
+        setIsOwnerSupabaseSessionActive(false);
+        setLastAuthError(classifySupabaseAuthError(error));
         return;
       }
+
+      if (!data?.session?.user) return;
+
+      const validSession = await getSupabaseOwnerSession();
+      if (!mounted || authActionInProgressRef.current) return;
+
+      if (!validSession) {
+        ownerCloudUserIdRef.current = null;
+        explicitLogoutRef.current = true;
+        await supabase.auth.signOut().finally(() => {
+          explicitLogoutRef.current = false;
+        });
+        setIsOwnerSupabaseSessionActive(false);
+        setLastAuthError(
+          !isConfiguredOwnerUserIdValid && !isConfiguredOwnerUserIdPlaceholder
+            ? 'Owner configuration error: VITE_OWNER_USER_ID is not a valid 36-character Supabase Auth UUID.'
+            : !isAuthorizedOwnerUser(data.session.user)
+            ? 'This Supabase session is not authorized as the Owner.'
+            : 'Your Owner session has expired. Please sign in again.'
+        );
+        return;
+      }
+
+      const serverVerify = await verifyOwnerSessionWithServer(
+        validSession.access_token,
+        undefined,
+        { requireStrictServer: requiresStrictServerOwnerVerification }
+      );
+      if (!mounted || authActionInProgressRef.current) return;
+      if (
+        !serverVerify.authorized &&
+        (requiresStrictServerOwnerVerification || !serverVerify.unreachable)
+      ) {
+        ownerCloudUserIdRef.current = null;
+        explicitLogoutRef.current = true;
+        await supabase.auth.signOut().finally(() => {
+          explicitLogoutRef.current = false;
+        });
+        setIsOwnerSupabaseSessionActive(false);
+        setLastAuthError(serverVerify.error || 'Owner session verification failed.');
+        return;
+      }
+
+      ownerCloudUserIdRef.current = validSession.user.id;
+      setLastAuthError(null);
       setIsOwnerSupabaseSessionActive(true);
-      hydrateAuthenticatedOwnerLocalState();
+      hydrateAuthenticatedOwnerLocalState(validSession.user.id);
       setCurrentPage(prev => (prev === 'login' ? 'home_dashboard' : prev));
-    });
+    })();
 
     const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
       if (!mounted) return;
       if (event === 'SIGNED_OUT' || !session) {
+        ownerCloudUserIdRef.current = null;
         setIsOwnerSupabaseSessionActive(false);
-        setState(prev => {
-          if (prev.role === 'owner' && prev.isAuthenticated) {
-            return { ...DEFAULT_GUEST_STATE, isAuthenticated: false };
+        // Never disrupt an active Guest preview session on background Supabase auth events
+        if (stateRef.current.role === 'owner' && stateRef.current.isAuthenticated) {
+          const wasExplicit = explicitLogoutRef.current;
+          setState({ ...DEFAULT_GUEST_STATE, isAuthenticated: false });
+          setCurrentPage('login');
+          if (!wasExplicit) {
+            setLastAuthError('Your Owner session has expired. Please sign in again.');
           }
-          return prev;
-        });
-        setCurrentPage(prev => (prev === 'login' ? prev : 'login'));
+        }
       } else if (session.user) {
-        if (configuredOwnerUserId && session.user.id !== configuredOwnerUserId) {
+        if (!isAuthorizedOwnerUser(session.user)) {
+          ownerCloudUserIdRef.current = null;
           setIsOwnerSupabaseSessionActive(false);
           return;
         }
+        ownerCloudUserIdRef.current = session.user.id;
         setIsOwnerSupabaseSessionActive(true);
       }
     });
@@ -427,20 +523,36 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
   }, []);
 
-  // Permanent Auto-Save on state changes
+  // Permanent Auto-Save on state changes (local + Owner-only Supabase cloud sync)
   useEffect(() => {
     if (!state.isAuthenticated) return;
 
     setSaveStatus('saving');
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    if (cloudSaveTimeoutRef.current) clearTimeout(cloudSaveTimeoutRef.current);
 
     saveTimeoutRef.current = setTimeout(async () => {
       const ok = await saveRoleStatePermanent(state);
       setSaveStatus(ok ? 'saved' : 'error');
     }, 250);
 
+    const activeOwnerCloudUid =
+      state.role === 'owner' && isSupabaseConfigured ? ownerCloudUserIdRef.current : null;
+    if (activeOwnerCloudUid) {
+      cloudSaveTimeoutRef.current = setTimeout(() => {
+        const syncedState = {
+          ...state,
+          lastSavedTimestamp: new Date().toISOString()
+        };
+        void saveOwnerProgressToCloud(activeOwnerCloudUid, syncedState).catch(() => {
+          // Local IndexedDB/localStorage save already succeeded cleanly
+        });
+      }, 1200);
+    }
+
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      if (cloudSaveTimeoutRef.current) clearTimeout(cloudSaveTimeoutRef.current);
     };
   }, [state]);
 
@@ -720,7 +832,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ]
   );
 
-  // Login (Supabase Auth for Owner when configured; local transition verifier only when unconfigured; Guest always local-only)
+  // Login (Supabase Auth + Server Registry verification for Owner when configured; Guest always local-only)
   const login = useCallback(
     async (user: string, pass: string, targetRole: UserRole): Promise<boolean> => {
       setLastAuthError(null);
@@ -728,40 +840,112 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const lowerUser = trimmedUser.toLowerCase();
 
       if (targetRole === 'owner') {
+        // Never fall back to local transition verifier when Supabase env vars are partially/mis-configured
+        if (hasPartialSupabaseEnv && (!isSupabaseConfigured || !supabase)) {
+          setLastAuthError(
+            !isAnonKeySafeForClient
+              ? 'Security error: VITE_SUPABASE_ANON_KEY cannot contain a service_role or sb_secret key.'
+              : 'Configuration error: VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY is invalid or incomplete.'
+          );
+          return false;
+        }
+
         if (isSupabaseConfigured && supabase) {
           const email = trimmedUser.includes('@')
-            ? trimmedUser
+            ? lowerUser
             : lowerUser === 'steeven' && configuredOwnerEmail
-            ? configuredOwnerEmail
+            ? configuredOwnerEmail.trim().toLowerCase()
             : '';
 
           if (!email) {
             setLastAuthError(
-              'Enter your Owner Supabase Auth email address (or configure VITE_OWNER_AUTH_EMAIL).'
+              'Enter your Owner Supabase Auth email address (or "Steeven" when VITE_OWNER_AUTH_EMAIL is configured).'
             );
             return false;
           }
 
-          const { data, error } = await supabase.auth.signInWithPassword({
-            email,
-            password: pass
-          });
-
-          if (error || !data?.user || !data?.session) {
-            setLastAuthError('Invalid Owner Supabase Auth credentials or account not yet created.');
+          if (
+            configuredOwnerEmail &&
+            email !== configuredOwnerEmail.trim().toLowerCase()
+          ) {
+            setLastAuthError('This email does not match the configured Owner account.');
             return false;
           }
 
-          if (configuredOwnerUserId && data.user.id !== configuredOwnerUserId) {
-            await supabase.auth.signOut();
-            setLastAuthError('This Supabase account is not authorized as the Owner.');
+          if (
+            configuredOwnerUserId &&
+            !isConfiguredOwnerUserIdValid &&
+            !isConfiguredOwnerUserIdPlaceholder
+          ) {
+            setLastAuthError(
+              'Owner configuration error: VITE_OWNER_USER_ID must be a valid 36-character Supabase Auth UUID.'
+            );
             return false;
           }
 
-          setIsOwnerSupabaseSessionActive(true);
-          hydrateAuthenticatedOwnerLocalState();
-          setCurrentPage('home_dashboard');
-          return true;
+          if (isConfiguredOwnerUserIdPlaceholder && !configuredOwnerEmail) {
+            setLastAuthError(
+              'Owner configuration error: VITE_OWNER_AUTH_EMAIL is required when VITE_OWNER_USER_ID holds a template placeholder.'
+            );
+            return false;
+          }
+
+          authActionInProgressRef.current = true;
+          try {
+            const { data, error } = await supabase.auth.signInWithPassword({
+              email,
+              password: pass
+            });
+
+            if (error || !data?.user || !data?.session) {
+              setLastAuthError(
+                error
+                  ? classifySupabaseAuthError(error)
+                  : 'Unable to establish an Owner Supabase Auth session.'
+              );
+              return false;
+            }
+
+            if (!isAuthorizedOwnerUser(data.user)) {
+              explicitLogoutRef.current = true;
+              await supabase.auth.signOut().finally(() => {
+                explicitLogoutRef.current = false;
+              });
+              setLastAuthError(
+                'Owner UUID mismatch: this Supabase account is not authorized as the Owner.'
+              );
+              return false;
+            }
+
+            const serverCheck = await verifyOwnerSessionWithServer(
+              data.session.access_token,
+              undefined,
+              { requireStrictServer: requiresStrictServerOwnerVerification }
+            );
+            if (!serverCheck.authorized) {
+              explicitLogoutRef.current = true;
+              await supabase.auth.signOut().finally(() => {
+                explicitLogoutRef.current = false;
+              });
+              setLastAuthError(
+                serverCheck.error ||
+                  'Owner registry authorization failed on the application server.'
+              );
+              return false;
+            }
+
+            ownerCloudUserIdRef.current = data.user.id;
+            setLastAuthError(null);
+            setIsOwnerSupabaseSessionActive(true);
+            hydrateAuthenticatedOwnerLocalState(data.user.id);
+            setCurrentPage('home_dashboard');
+            return true;
+          } catch (err) {
+            setLastAuthError(classifySupabaseAuthError(err));
+            return false;
+          } finally {
+            authActionInProgressRef.current = false;
+          }
         }
 
         // Pre-Supabase local transition mode (strictly unavailable once Supabase Auth is configured)
@@ -788,8 +972,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           ownerState.authVerifier = await computeOwnerTransitionVerifier(ownerState.passwordHash);
         }
         ownerState.passwordHash = '';
+        ownerCloudUserIdRef.current = null;
         setIsOwnerSupabaseSessionActive(false);
-        hydrateAuthenticatedOwnerLocalState();
+        hydrateAuthenticatedOwnerLocalState(null);
         setCurrentPage('home_dashboard');
         return true;
       } else {
@@ -800,6 +985,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           const guestState = loadRoleStateSync('guest');
           guestState.isAuthenticated = true;
           guestState.passwordHash = '';
+          ownerCloudUserIdRef.current = null;
           setIsOwnerSupabaseSessionActive(false);
           setState(guestState);
           setSelectedDayNumberState(guestState.lastActiveDayNumber || 1);
@@ -832,6 +1018,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const logout = useCallback(() => {
+    explicitLogoutRef.current = true;
+    ownerCloudUserIdRef.current = null;
+    if (cloudSaveTimeoutRef.current) clearTimeout(cloudSaveTimeoutRef.current);
     setTestModeEnabled(false);
     setTestModeDate(null);
     setLastAuthError(null);
@@ -854,7 +1043,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
 
     if (isSupabaseConfigured && supabase) {
-      void supabase.auth.signOut();
+      void supabase.auth.signOut().finally(() => {
+        explicitLogoutRef.current = false;
+      });
+    } else {
+      explicitLogoutRef.current = false;
     }
     setCurrentPage('login');
   }, []);
@@ -1919,6 +2112,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       isSupabaseAuthConfigured: isSupabaseConfigured,
       isOwnerSupabaseSessionActive,
       lastAuthError,
+      clearAuthError,
       toggleTaskCompletion,
       saveDayNotes,
       submitAssessment,

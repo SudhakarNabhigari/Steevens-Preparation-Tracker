@@ -11545,21 +11545,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:12": [
     {
-      "id": "react_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "React Official Learn Documentation",
-      "url": "https://react.dev/learn",
-      "description": "Official React guide covering components, state boundaries, hooks, and UI architecture.",
-      "sourceLabel": "React Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "ts_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "TypeScript Handbook",
-      "url": "https://www.typescriptlang.org/docs/handbook/intro.html",
-      "description": "Official TypeScript handbook for typed API contracts and component props.",
-      "sourceLabel": "TypeScript Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -11845,21 +11845,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:27": [
     {
-      "id": "react_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "React Official Learn Documentation",
-      "url": "https://react.dev/learn",
-      "description": "Official React guide covering components, state boundaries, hooks, and UI architecture.",
-      "sourceLabel": "React Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "ts_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "TypeScript Handbook",
-      "url": "https://www.typescriptlang.org/docs/handbook/intro.html",
-      "description": "Official TypeScript handbook for typed API contracts and component props.",
-      "sourceLabel": "TypeScript Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -12105,41 +12105,41 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:40": [
     {
-      "id": "pytest_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "pytest Official Documentation",
-      "url": "https://docs.pytest.org/en/stable/",
-      "description": "Official pytest documentation for unit, integration, and fixture-driven API tests.",
-      "sourceLabel": "pytest Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "fastapi_test",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "FastAPI Testing Guide",
-      "url": "https://fastapi.tiangolo.com/tutorial/testing/",
-      "description": "Official TestClient documentation for verifying FastAPI endpoints.",
-      "sourceLabel": "FastAPI Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
   "main:41": [
     {
-      "id": "react_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "React Official Learn Documentation",
-      "url": "https://react.dev/learn",
-      "description": "Official React guide covering components, state boundaries, hooks, and UI architecture.",
-      "sourceLabel": "React Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "ts_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "TypeScript Handbook",
-      "url": "https://www.typescriptlang.org/docs/handbook/intro.html",
-      "description": "Official TypeScript handbook for typed API contracts and component props.",
-      "sourceLabel": "TypeScript Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -12225,20 +12225,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:46": [
     {
-      "id": "pg_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "PostgreSQL Official Documentation",
-      "url": "https://www.postgresql.org/docs/current/",
-      "description": "Official PostgreSQL documentation for relational entities, indexing, and transactions.",
-      "sourceLabel": "PostgreSQL Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "gemini_api_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "Google Gemini API Official Documentation",
+      "title": "Google AI Gemini API Documentation",
       "url": "https://ai.google.dev/gemini-api/docs",
-      "description": "Official Gemini API guide covering text generation, structured JSON outputs, and embeddings.",
+      "description": "Official LLM & RAG architecture API documentation.",
       "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
@@ -12405,21 +12405,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:55": [
     {
-      "id": "react_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "React Official Learn Documentation",
-      "url": "https://react.dev/learn",
-      "description": "Official React guide covering components, state boundaries, hooks, and UI architecture.",
-      "sourceLabel": "React Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "ts_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "TypeScript Handbook",
-      "url": "https://www.typescriptlang.org/docs/handbook/intro.html",
-      "description": "Official TypeScript handbook for typed API contracts and component props.",
-      "sourceLabel": "TypeScript Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -12685,41 +12685,41 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:69": [
     {
-      "id": "pg_docs",
+      "id": "pytest_docs",
       "resourceType": "official_documentation",
-      "title": "PostgreSQL Official Documentation",
-      "url": "https://www.postgresql.org/docs/current/",
-      "description": "Official PostgreSQL documentation for relational entities, indexing, and transactions.",
-      "sourceLabel": "PostgreSQL Docs",
+      "title": "pytest Official Documentation",
+      "url": "https://docs.pytest.org/en/stable/",
+      "description": "Official pytest documentation for unit, integration, and fixture-driven API tests.",
+      "sourceLabel": "pytest Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "gemini_api_docs",
+      "id": "fastapi_test",
       "resourceType": "official_documentation",
-      "title": "Google Gemini API Official Documentation",
-      "url": "https://ai.google.dev/gemini-api/docs",
-      "description": "Official Gemini API guide covering text generation, structured JSON outputs, and embeddings.",
-      "sourceLabel": "Google AI for Developers",
+      "title": "FastAPI Testing Guide",
+      "url": "https://fastapi.tiangolo.com/tutorial/testing/",
+      "description": "Official TestClient documentation for verifying FastAPI endpoints.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     }
   ],
   "main:70": [
     {
-      "id": "react_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "React Official Learn Documentation",
-      "url": "https://react.dev/learn",
-      "description": "Official React guide covering components, state boundaries, hooks, and UI architecture.",
-      "sourceLabel": "React Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "ts_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "TypeScript Handbook",
-      "url": "https://www.typescriptlang.org/docs/handbook/intro.html",
-      "description": "Official TypeScript handbook for typed API contracts and component props.",
-      "sourceLabel": "TypeScript Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -12885,21 +12885,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:79": [
     {
-      "id": "git_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "Official Git Reference Manual",
-      "url": "https://git-scm.com/docs",
-      "description": "Authoritative Git CLI reference for branching, merging, and clean commits.",
-      "sourceLabel": "Git SCM",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "gh_actions",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "GitHub Actions Documentation",
-      "url": "https://docs.github.com/en/actions",
-      "description": "Official CI/CD workflow reference for automated testing and deployment pipelines.",
-      "sourceLabel": "GitHub Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -12985,21 +12985,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:84": [
     {
-      "id": "react_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "React Official Learn Documentation",
-      "url": "https://react.dev/learn",
-      "description": "Official React guide covering components, state boundaries, hooks, and UI architecture.",
-      "sourceLabel": "React Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "ts_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "TypeScript Handbook",
-      "url": "https://www.typescriptlang.org/docs/handbook/intro.html",
-      "description": "Official TypeScript handbook for typed API contracts and component props.",
-      "sourceLabel": "TypeScript Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -13265,21 +13265,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:98": [
     {
-      "id": "react_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "React Official Learn Documentation",
-      "url": "https://react.dev/learn",
-      "description": "Official React guide covering components, state boundaries, hooks, and UI architecture.",
-      "sourceLabel": "React Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "ts_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "TypeScript Handbook",
-      "url": "https://www.typescriptlang.org/docs/handbook/intro.html",
-      "description": "Official TypeScript handbook for typed API contracts and component props.",
-      "sourceLabel": "TypeScript Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -13345,21 +13345,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:102": [
     {
-      "id": "git_docs",
+      "id": "pytest_docs",
       "resourceType": "official_documentation",
-      "title": "Official Git Reference Manual",
-      "url": "https://git-scm.com/docs",
-      "description": "Authoritative Git CLI reference for branching, merging, and clean commits.",
-      "sourceLabel": "Git SCM",
+      "title": "pytest Official Documentation",
+      "url": "https://docs.pytest.org/en/stable/",
+      "description": "Official pytest documentation for unit, integration, and fixture-driven API tests.",
+      "sourceLabel": "pytest Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "gh_actions",
+      "id": "fastapi_test",
       "resourceType": "official_documentation",
-      "title": "GitHub Actions Documentation",
-      "url": "https://docs.github.com/en/actions",
-      "description": "Official CI/CD workflow reference for automated testing and deployment pipelines.",
-      "sourceLabel": "GitHub Docs",
+      "title": "FastAPI Testing Guide",
+      "url": "https://fastapi.tiangolo.com/tutorial/testing/",
+      "description": "Official TestClient documentation for verifying FastAPI endpoints.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     }
   ],
@@ -13545,21 +13545,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:112": [
     {
-      "id": "react_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "React Official Learn Documentation",
-      "url": "https://react.dev/learn",
-      "description": "Official React guide covering components, state boundaries, hooks, and UI architecture.",
-      "sourceLabel": "React Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "ts_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "TypeScript Handbook",
-      "url": "https://www.typescriptlang.org/docs/handbook/intro.html",
-      "description": "Official TypeScript handbook for typed API contracts and component props.",
-      "sourceLabel": "TypeScript Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -13825,21 +13825,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:126": [
     {
-      "id": "react_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "React Official Learn Documentation",
-      "url": "https://react.dev/learn",
-      "description": "Official React guide covering components, state boundaries, hooks, and UI architecture.",
-      "sourceLabel": "React Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "ts_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "TypeScript Handbook",
-      "url": "https://www.typescriptlang.org/docs/handbook/intro.html",
-      "description": "Official TypeScript handbook for typed API contracts and component props.",
-      "sourceLabel": "TypeScript Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -14065,21 +14065,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:138": [
     {
-      "id": "fastapi_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "FastAPI Official Tutorial & Reference",
-      "url": "https://fastapi.tiangolo.com/tutorial/",
-      "description": "Official FastAPI documentation covering routes, Pydantic validation, status codes, and dependencies.",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
       "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "pydantic_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "Pydantic Settings & Validation Docs",
-      "url": "https://docs.pydantic.dev/latest/concepts/pydantic_settings/",
-      "description": "Official Pydantic v2 BaseSettings configuration and schema validation documentation.",
-      "sourceLabel": "Pydantic Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -14105,21 +14105,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:140": [
     {
-      "id": "react_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "React Official Learn Documentation",
-      "url": "https://react.dev/learn",
-      "description": "Official React guide covering components, state boundaries, hooks, and UI architecture.",
-      "sourceLabel": "React Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "ts_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "TypeScript Handbook",
-      "url": "https://www.typescriptlang.org/docs/handbook/intro.html",
-      "description": "Official TypeScript handbook for typed API contracts and component props.",
-      "sourceLabel": "TypeScript Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -14145,21 +14145,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:142": [
     {
-      "id": "docker_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "Docker Official Documentation",
-      "url": "https://docs.docker.com/get-started/",
-      "description": "Official Docker guide for multi-stage builds, containerization, and Compose setups.",
-      "sourceLabel": "Docker Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "fastapi_deploy",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "FastAPI Deployment Guide",
-      "url": "https://fastapi.tiangolo.com/deployment/",
-      "description": "Official FastAPI production deployment and container architecture guidance.",
-      "sourceLabel": "FastAPI Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -14205,21 +14205,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:145": [
     {
-      "id": "pg_docs",
+      "id": "docker_docs",
       "resourceType": "official_documentation",
-      "title": "PostgreSQL Official Documentation",
-      "url": "https://www.postgresql.org/docs/current/",
-      "description": "Official PostgreSQL documentation for relational entities, indexing, and transactions.",
-      "sourceLabel": "PostgreSQL Docs",
+      "title": "Docker Official Documentation",
+      "url": "https://docs.docker.com/get-started/",
+      "description": "Official Docker guide for multi-stage builds, containerization, and Compose setups.",
+      "sourceLabel": "Docker Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "gemini_api_docs",
+      "id": "fastapi_deploy",
       "resourceType": "official_documentation",
-      "title": "Google Gemini API Official Documentation",
-      "url": "https://ai.google.dev/gemini-api/docs",
-      "description": "Official Gemini API guide covering text generation, structured JSON outputs, and embeddings.",
-      "sourceLabel": "Google AI for Developers",
+      "title": "FastAPI Deployment Guide",
+      "url": "https://fastapi.tiangolo.com/deployment/",
+      "description": "Official FastAPI production deployment and container architecture guidance.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     }
   ],
@@ -14285,21 +14285,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:149": [
     {
-      "id": "fastapi_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "FastAPI Official Tutorial & Reference",
-      "url": "https://fastapi.tiangolo.com/tutorial/",
-      "description": "Official FastAPI documentation covering routes, Pydantic validation, status codes, and dependencies.",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
       "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "pydantic_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "Pydantic Settings & Validation Docs",
-      "url": "https://docs.pydantic.dev/latest/concepts/pydantic_settings/",
-      "description": "Official Pydantic v2 BaseSettings configuration and schema validation documentation.",
-      "sourceLabel": "Pydantic Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -14385,21 +14385,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:154": [
     {
-      "id": "react_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "React Official Learn Documentation",
-      "url": "https://react.dev/learn",
-      "description": "Official React guide covering components, state boundaries, hooks, and UI architecture.",
-      "sourceLabel": "React Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "ts_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "TypeScript Handbook",
-      "url": "https://www.typescriptlang.org/docs/handbook/intro.html",
-      "description": "Official TypeScript handbook for typed API contracts and component props.",
-      "sourceLabel": "TypeScript Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -14665,21 +14665,21 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "main:168": [
     {
-      "id": "react_docs",
+      "id": "fastapi_main",
       "resourceType": "official_documentation",
-      "title": "React Official Learn Documentation",
-      "url": "https://react.dev/learn",
-      "description": "Official React guide covering components, state boundaries, hooks, and UI architecture.",
-      "sourceLabel": "React Docs",
+      "title": "FastAPI Official Documentation",
+      "url": "https://fastapi.tiangolo.com/",
+      "description": "Core backend API framework reference for Production RAG services.",
+      "sourceLabel": "FastAPI Docs",
       "isVerifiedUrl": true
     },
     {
-      "id": "ts_docs",
+      "id": "gemini_main",
       "resourceType": "official_documentation",
-      "title": "TypeScript Handbook",
-      "url": "https://www.typescriptlang.org/docs/handbook/intro.html",
-      "description": "Official TypeScript handbook for typed API contracts and component props.",
-      "sourceLabel": "TypeScript Docs",
+      "title": "Google AI Gemini API Documentation",
+      "url": "https://ai.google.dev/gemini-api/docs",
+      "description": "Official LLM & RAG architecture API documentation.",
+      "sourceLabel": "Google AI for Developers",
       "isVerifiedUrl": true
     }
   ],
@@ -14925,20 +14925,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "dsa:1": [
     {
-      "id": "cpp_containers",
+      "id": "cpp_lang",
       "resourceType": "official_documentation",
-      "title": "cppreference — C++ Containers Library",
-      "url": "https://en.cppreference.com/w/cpp/container",
-      "description": "Authoritative reference for vector, stack, queue, deque, set, map, and priority_queue.",
+      "title": "cppreference — C++ Language Reference",
+      "url": "https://en.cppreference.com/w/cpp/language",
+      "description": "Authoritative C++17 language reference covering types, operators, control flow, and functions.",
       "sourceLabel": "cppreference",
       "isVerifiedUrl": true
     },
     {
-      "id": "cpp_algo",
+      "id": "cpp_algo_base",
       "resourceType": "official_documentation",
-      "title": "cppreference — C++ Algorithms Library",
+      "title": "cppreference — C++ Standard Algorithms",
       "url": "https://en.cppreference.com/w/cpp/algorithm",
-      "description": "Official reference for sort, lower_bound, upper_bound, binary_search, and iterators.",
+      "description": "Official C++ STL algorithm reference and complexity guarantees.",
       "sourceLabel": "cppreference",
       "isVerifiedUrl": true
     }
@@ -16262,11 +16262,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "dsa:71": [
     {
-      "id": "cpp_classes",
+      "id": "cpp_lang",
       "resourceType": "official_documentation",
-      "title": "cppreference — Classes & Structs",
-      "url": "https://en.cppreference.com/w/cpp/language/classes",
-      "description": "Official reference covering C++ constructors, access specifiers, inheritance, and pointers.",
+      "title": "cppreference — C++ Language Reference",
+      "url": "https://en.cppreference.com/w/cpp/language",
+      "description": "Authoritative C++17 language reference covering types, operators, control flow, and functions.",
+      "sourceLabel": "cppreference",
+      "isVerifiedUrl": true
+    },
+    {
+      "id": "cpp_algo_base",
+      "resourceType": "official_documentation",
+      "title": "cppreference — C++ Standard Algorithms",
+      "url": "https://en.cppreference.com/w/cpp/algorithm",
+      "description": "Official C++ STL algorithm reference and complexity guarantees.",
       "sourceLabel": "cppreference",
       "isVerifiedUrl": true
     }
@@ -16733,11 +16742,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "dsa:95": [
     {
-      "id": "cpp_classes",
+      "id": "cpp_lang",
       "resourceType": "official_documentation",
-      "title": "cppreference — Classes & Structs",
-      "url": "https://en.cppreference.com/w/cpp/language/classes",
-      "description": "Official reference covering C++ constructors, access specifiers, inheritance, and pointers.",
+      "title": "cppreference — C++ Language Reference",
+      "url": "https://en.cppreference.com/w/cpp/language",
+      "description": "Authoritative C++17 language reference covering types, operators, control flow, and functions.",
+      "sourceLabel": "cppreference",
+      "isVerifiedUrl": true
+    },
+    {
+      "id": "cpp_algo_base",
+      "resourceType": "official_documentation",
+      "title": "cppreference — C++ Standard Algorithms",
+      "url": "https://en.cppreference.com/w/cpp/algorithm",
+      "description": "Official C++ STL algorithm reference and complexity guarantees.",
       "sourceLabel": "cppreference",
       "isVerifiedUrl": true
     }
@@ -16884,20 +16902,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:3": [
     {
-      "id": "ms_aisearch",
+      "id": "ms_az900_hub",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Search Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/search/",
-      "description": "Official Microsoft Learn documentation for indexes, indexers, vector search, and hybrid retrieval.",
+      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
+      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
+      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_rag",
+      "id": "ms_azure_home",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — RAG Architecture in Azure AI Search",
-      "url": "https://learn.microsoft.com/en-us/azure/search/retrieval-augmented-generation-overview",
-      "description": "Official Microsoft guide to RAG pipelines, chunking, and grounding citations.",
+      "title": "Microsoft Learn — Azure Architecture Center",
+      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
+      "description": "Official Microsoft reference architectures and best practices.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -16944,40 +16962,40 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:6": [
     {
-      "id": "ms_aisvc",
+      "id": "ms_az900_hub",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Services Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
-      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
+      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
+      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
+      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_ai102",
+      "id": "ms_azure_home",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
-      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
-      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
+      "title": "Microsoft Learn — Azure Architecture Center",
+      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
+      "description": "Official Microsoft reference architectures and best practices.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
   ],
   "azure:7": [
     {
-      "id": "ms_aisvc",
+      "id": "ms_az900_hub",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Services Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
-      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
+      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
+      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
+      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_ai102",
+      "id": "ms_azure_home",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
-      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
-      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
+      "title": "Microsoft Learn — Azure Architecture Center",
+      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
+      "description": "Official Microsoft reference architectures and best practices.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -17044,20 +17062,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:11": [
     {
-      "id": "ms_aisearch",
+      "id": "ms_arch",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Search Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/search/",
-      "description": "Official Microsoft Learn documentation for indexes, indexers, vector search, and hybrid retrieval.",
+      "title": "Microsoft Learn — Azure Core Cloud Services Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/",
+      "description": "Official Microsoft Azure documentation hub for Compute, Networking, Storage, Identity, and Monitoring.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_rag",
+      "id": "ms_az900",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — RAG Architecture in Azure AI Search",
-      "url": "https://learn.microsoft.com/en-us/azure/search/retrieval-augmented-generation-overview",
-      "description": "Official Microsoft guide to RAG pipelines, chunking, and grounding citations.",
+      "title": "Microsoft Learn — Azure Fundamentals (AZ-900) Learning Path",
+      "url": "https://learn.microsoft.com/en-us/training/courses/az-900t00",
+      "description": "Official Microsoft Learn Azure Fundamentals training modules.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -17084,40 +17102,40 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:13": [
     {
-      "id": "ms_aisvc",
+      "id": "ms_az900_hub",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Services Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
-      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
+      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
+      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
+      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_ai102",
+      "id": "ms_azure_home",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
-      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
-      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
+      "title": "Microsoft Learn — Azure Architecture Center",
+      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
+      "description": "Official Microsoft reference architectures and best practices.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
   ],
   "azure:14": [
     {
-      "id": "ms_aisvc",
+      "id": "ms_az900_hub",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Services Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
-      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
+      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
+      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
+      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_ai102",
+      "id": "ms_azure_home",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
-      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
-      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
+      "title": "Microsoft Learn — Azure Architecture Center",
+      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
+      "description": "Official Microsoft reference architectures and best practices.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -17184,26 +17202,46 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:18": [
     {
-      "id": "ms_az900_hub",
+      "id": "ms_arch",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
-      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
-      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
+      "title": "Microsoft Learn — Azure Core Cloud Services Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/",
+      "description": "Official Microsoft Azure documentation hub for Compute, Networking, Storage, Identity, and Monitoring.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_azure_home",
+      "id": "ms_az900",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure Architecture Center",
-      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
-      "description": "Official Microsoft reference architectures and best practices.",
+      "title": "Microsoft Learn — Azure Fundamentals (AZ-900) Learning Path",
+      "url": "https://learn.microsoft.com/en-us/training/courses/az-900t00",
+      "description": "Official Microsoft Learn Azure Fundamentals training modules.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
   ],
   "azure:19": [
     {
+      "id": "ms_arch",
+      "resourceType": "official_documentation",
+      "title": "Microsoft Learn — Azure Core Cloud Services Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/",
+      "description": "Official Microsoft Azure documentation hub for Compute, Networking, Storage, Identity, and Monitoring.",
+      "sourceLabel": "Microsoft Learn",
+      "isVerifiedUrl": true
+    },
+    {
+      "id": "ms_az900",
+      "resourceType": "official_documentation",
+      "title": "Microsoft Learn — Azure Fundamentals (AZ-900) Learning Path",
+      "url": "https://learn.microsoft.com/en-us/training/courses/az-900t00",
+      "description": "Official Microsoft Learn Azure Fundamentals training modules.",
+      "sourceLabel": "Microsoft Learn",
+      "isVerifiedUrl": true
+    }
+  ],
+  "azure:20": [
+    {
       "id": "ms_az900_hub",
       "resourceType": "official_documentation",
       "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
@@ -17222,42 +17260,22 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
       "isVerifiedUrl": true
     }
   ],
-  "azure:20": [
-    {
-      "id": "ms_aisvc",
-      "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Services Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
-      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
-      "sourceLabel": "Microsoft Learn",
-      "isVerifiedUrl": true
-    },
-    {
-      "id": "ms_ai102",
-      "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
-      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
-      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
-      "sourceLabel": "Microsoft Learn",
-      "isVerifiedUrl": true
-    }
-  ],
   "azure:21": [
     {
-      "id": "ms_aisvc",
+      "id": "ms_az900_hub",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Services Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
-      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
+      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
+      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
+      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_ai102",
+      "id": "ms_azure_home",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
-      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
-      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
+      "title": "Microsoft Learn — Azure Architecture Center",
+      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
+      "description": "Official Microsoft reference architectures and best practices.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -17364,40 +17382,40 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:27": [
     {
-      "id": "ms_aisvc",
+      "id": "ms_sql",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Services Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
-      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
+      "title": "Microsoft Learn — Azure SQL Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/azure-sql/",
+      "description": "Official comparison and documentation for Azure SQL Database, Managed Instance, and SQL VMs.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_ai102",
+      "id": "ms_cosmos",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
-      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
-      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
+      "title": "Microsoft Learn — Azure Cosmos DB Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/cosmos-db/",
+      "description": "Official Microsoft Learn reference for Cosmos DB containers, items, and partition keys.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
   ],
   "azure:28": [
     {
-      "id": "ms_aisvc",
+      "id": "ms_sql",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Services Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
-      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
+      "title": "Microsoft Learn — Azure SQL Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/azure-sql/",
+      "description": "Official comparison and documentation for Azure SQL Database, Managed Instance, and SQL VMs.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_ai102",
+      "id": "ms_cosmos",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
-      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
-      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
+      "title": "Microsoft Learn — Azure Cosmos DB Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/cosmos-db/",
+      "description": "Official Microsoft Learn reference for Cosmos DB containers, items, and partition keys.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -17504,40 +17522,40 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:34": [
     {
-      "id": "ms_aisvc",
+      "id": "ms_sql",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Services Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
-      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
+      "title": "Microsoft Learn — Azure SQL Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/azure-sql/",
+      "description": "Official comparison and documentation for Azure SQL Database, Managed Instance, and SQL VMs.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_ai102",
+      "id": "ms_cosmos",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
-      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
-      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
+      "title": "Microsoft Learn — Azure Cosmos DB Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/cosmos-db/",
+      "description": "Official Microsoft Learn reference for Cosmos DB containers, items, and partition keys.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
   ],
   "azure:35": [
     {
-      "id": "ms_aisvc",
+      "id": "ms_sql",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Services Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
-      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
+      "title": "Microsoft Learn — Azure SQL Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/azure-sql/",
+      "description": "Official comparison and documentation for Azure SQL Database, Managed Instance, and SQL VMs.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_ai102",
+      "id": "ms_cosmos",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
-      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
-      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
+      "title": "Microsoft Learn — Azure Cosmos DB Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/cosmos-db/",
+      "description": "Official Microsoft Learn reference for Cosmos DB containers, items, and partition keys.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -17904,20 +17922,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:54": [
     {
-      "id": "ms_az900_hub",
+      "id": "ms_foundry",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
-      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
-      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
+      "title": "Microsoft Learn — Azure AI Foundry Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/ai-foundry/",
+      "description": "Official Microsoft Learn documentation for Azure AI Foundry projects, model deployments, and prompt engineering.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_azure_home",
+      "id": "ms_openai_safety",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure Architecture Center",
-      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
-      "description": "Official Microsoft reference architectures and best practices.",
+      "title": "Microsoft Learn — Azure AI Content Safety",
+      "url": "https://learn.microsoft.com/en-us/azure/ai-services/content-safety/overview",
+      "description": "Official Microsoft documentation for content filtering, prompt shields, and AI safety.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -18184,20 +18202,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:68": [
     {
-      "id": "ms_az900_hub",
+      "id": "ms_aisvc",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
-      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
-      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
+      "title": "Microsoft Learn — Azure AI Services Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
+      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_azure_home",
+      "id": "ms_ai102",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure Architecture Center",
-      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
-      "description": "Official Microsoft reference architectures and best practices.",
+      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
+      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
+      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -18244,20 +18262,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:71": [
     {
-      "id": "ms_az900_hub",
+      "id": "ms_aisvc",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
-      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
-      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
+      "title": "Microsoft Learn — Azure AI Services Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
+      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_azure_home",
+      "id": "ms_ai102",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure Architecture Center",
-      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
-      "description": "Official Microsoft reference architectures and best practices.",
+      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
+      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
+      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -18304,40 +18322,40 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:74": [
     {
-      "id": "ms_az900_hub",
+      "id": "ms_aisvc",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
-      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
-      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
+      "title": "Microsoft Learn — Azure AI Services Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
+      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_azure_home",
+      "id": "ms_ai102",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure Architecture Center",
-      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
-      "description": "Official Microsoft reference architectures and best practices.",
+      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
+      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
+      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
   ],
   "azure:75": [
     {
-      "id": "ms_az900_hub",
+      "id": "ms_aisvc",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
-      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
-      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
+      "title": "Microsoft Learn — Azure AI Services Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
+      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_azure_home",
+      "id": "ms_ai102",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure Architecture Center",
-      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
-      "description": "Official Microsoft reference architectures and best practices.",
+      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
+      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
+      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -18384,40 +18402,40 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:78": [
     {
-      "id": "ms_az900_hub",
+      "id": "ms_aisvc",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
-      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
-      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
+      "title": "Microsoft Learn — Azure AI Services Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
+      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_azure_home",
+      "id": "ms_ai102",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure Architecture Center",
-      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
-      "description": "Official Microsoft reference architectures and best practices.",
+      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
+      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
+      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
   ],
   "azure:79": [
     {
-      "id": "ms_az900_hub",
+      "id": "ms_aisvc",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
-      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
-      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
+      "title": "Microsoft Learn — Azure AI Services Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
+      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_azure_home",
+      "id": "ms_ai102",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure Architecture Center",
-      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
-      "description": "Official Microsoft reference architectures and best practices.",
+      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
+      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
+      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -18464,20 +18482,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:82": [
     {
-      "id": "ms_aisvc",
+      "id": "ms_arch",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Services Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
-      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
+      "title": "Microsoft Learn — Azure Core Cloud Services Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/",
+      "description": "Official Microsoft Azure documentation hub for Compute, Networking, Storage, Identity, and Monitoring.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_ai102",
+      "id": "ms_az900",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
-      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
-      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
+      "title": "Microsoft Learn — Azure Fundamentals (AZ-900) Learning Path",
+      "url": "https://learn.microsoft.com/en-us/training/courses/az-900t00",
+      "description": "Official Microsoft Learn Azure Fundamentals training modules.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -18524,20 +18542,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:85": [
     {
-      "id": "ms_aisvc",
+      "id": "ms_sql",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure AI Services Documentation",
-      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
-      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
+      "title": "Microsoft Learn — Azure SQL Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/azure-sql/",
+      "description": "Official comparison and documentation for Azure SQL Database, Managed Instance, and SQL VMs.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_ai102",
+      "id": "ms_cosmos",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
-      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
-      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
+      "title": "Microsoft Learn — Azure Cosmos DB Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/cosmos-db/",
+      "description": "Official Microsoft Learn reference for Cosmos DB containers, items, and partition keys.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -18584,20 +18602,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:88": [
     {
-      "id": "ms_az900_hub",
+      "id": "ms_arch",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
-      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
-      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
+      "title": "Microsoft Learn — Azure Core Cloud Services Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/",
+      "description": "Official Microsoft Azure documentation hub for Compute, Networking, Storage, Identity, and Monitoring.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_azure_home",
+      "id": "ms_az900",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure Architecture Center",
-      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
-      "description": "Official Microsoft reference architectures and best practices.",
+      "title": "Microsoft Learn — Azure Fundamentals (AZ-900) Learning Path",
+      "url": "https://learn.microsoft.com/en-us/training/courses/az-900t00",
+      "description": "Official Microsoft Learn Azure Fundamentals training modules.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }
@@ -18804,20 +18822,20 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ],
   "azure:99": [
     {
-      "id": "ms_az900_hub",
+      "id": "ms_aisvc",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Cloud Concepts & Azure Fundamentals",
-      "url": "https://learn.microsoft.com/en-us/training/paths/microsoft-azure-fundamentals-describe-cloud-concepts/",
-      "description": "Official Microsoft Learn path covering cloud models, shared responsibility, IaaS/PaaS/SaaS, and Azure hierarchy.",
+      "title": "Microsoft Learn — Azure AI Services Documentation",
+      "url": "https://learn.microsoft.com/en-us/azure/ai-services/",
+      "description": "Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     },
     {
-      "id": "ms_azure_home",
+      "id": "ms_ai102",
       "resourceType": "official_documentation",
-      "title": "Microsoft Learn — Azure Architecture Center",
-      "url": "https://learn.microsoft.com/en-us/azure/architecture/",
-      "description": "Official Microsoft reference architectures and best practices.",
+      "title": "Microsoft Learn — Exam AI-102 Study & Training Path",
+      "url": "https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/",
+      "description": "Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.",
       "sourceLabel": "Microsoft Learn",
       "isVerifiedUrl": true
     }

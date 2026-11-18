@@ -5,6 +5,7 @@ import {
   generateTrackDailyResources,
   getDailyResourcesDashboard
 } from '../../server/dailyResourcesService.ts';
+import { applyApiSecurityAndCorsHeaders } from '../../server/httpCors.ts';
 import { isTrackDayCurrentlyUnlockedCanonical } from '../../supabase/functions/daily-learning-resources/pipeline.ts';
 
 function isValidTrackId(value: unknown): value is TrackId {
@@ -37,6 +38,15 @@ export default async function handler(
   req: IncomingMessage & { body?: unknown },
   res: ServerResponse
 ) {
+  if (
+    applyApiSecurityAndCorsHeaders(req, res, {
+      allowMethods: 'POST, OPTIONS',
+      noStore: true
+    })
+  ) {
+    return;
+  }
+
   if (req.method !== 'POST') {
     return sendJson(res, 405, { error: 'Method not allowed' });
   }

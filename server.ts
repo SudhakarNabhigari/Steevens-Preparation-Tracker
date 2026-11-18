@@ -6,11 +6,13 @@ import type { TrackId } from './src/types/index.ts';
 import { verifyOwnerAuthHeader, type VerifyOwnerOptions } from './server/auth.ts';
 import {
   generateTrackDailyResources,
+  getDailyEmailPreview,
   getDailyResourcesDashboard,
   isEphemeralServerlessRuntime,
   runDailyAutomationJob,
   startDaily10AmIstScheduler
 } from './server/dailyResourcesService.ts';
+import { applyApiSecurityAndCorsHeaders } from './server/httpCors.ts';
 import { isTrackDayCurrentlyUnlockedCanonical } from './supabase/functions/daily-learning-resources/pipeline.ts';
 
 const PORT = Number(process.env.PORT || 3000);
@@ -35,6 +37,19 @@ export async function createApp(options?: CreateAppOptions): Promise<Express> {
   const verifyOwner = options?.verifyOwner || verifyOwnerAuthHeader;
   const attachFrontend = options?.attachFrontend ?? true;
 
+  app.use('/api', (req, res, next) => {
+    const noStore = req.path === '/auth/verify-owner' || req.method === 'POST';
+    if (
+      applyApiSecurityAndCorsHeaders(req, res, {
+        allowMethods: 'GET, POST, OPTIONS',
+        noStore
+      })
+    ) {
+      return;
+    }
+    next();
+  });
+
   // ==========================================
   // API ROUTES (Registered BEFORE Vite / SPA fallback)
   // ==========================================
@@ -45,6 +60,32 @@ export async function createApp(options?: CreateAppOptions): Promise<Express> {
       timezone: 'Asia/Kolkata',
       dailyScheduleIst: '10:00 AM IST'
     });
+  });
+
+  app.post('/api/auth/verify-owner', async (req, res) => {
+    try {
+      const auth = await verifyOwner(req.headers.authorization, { allowCronSecret: false });
+      if (!auth.authorized) {
+        res.status(auth.status).json({
+          authorized: false,
+          errorCode: auth.errorCode || 'UNAUTHORIZED',
+          error: auth.error || 'Owner authentication failed.'
+        });
+        return;
+      }
+
+      res.json({
+        authorized: true,
+        authMethod: auth.authMethod,
+        registryVerified: Boolean(auth.registryVerified)
+      });
+    } catch {
+      res.status(500).json({
+        authorized: false,
+        errorCode: 'AUTH_SERVICE_UNREACHABLE',
+        error: 'Unable to verify Owner session.'
+      });
+    }
   });
 
   app.get('/api/daily-resources', async (req, res) => {
@@ -81,6 +122,62 @@ export async function createApp(options?: CreateAppOptions): Promise<Express> {
     } catch (err) {
       res.status(500).json({
         error: err instanceof Error ? err.message : 'Failed to load daily AI learning resources.'
+      });
+    }
+  });
+
+  app.get('/api/daily-resources/email-preview', async (req, res) => {
+    try {
+      const rawTrack =
+        typeof req.query.track === 'string' && req.query.track.trim()
+          ? req.query.track.trim()
+          : 'combined';
+      const dayParam = typeof req.query.day === 'string' ? Number(req.query.day) : undefined;
+
+      if (rawTrack !== 'combined' && !isValidTrackId(rawTrack)) {
+        res.status(400).json({
+          error: 'Invalid track query parameter. Expected main, dsa, azure, or combined.'
+        });
+        return;
+      }
+
+      if (dayParam !== undefined) {
+        if (!Number.isInteger(dayParam) || dayParam < 1) {
+          res.status(400).json({ error: 'Invalid day query parameter.' });
+          return;
+        }
+        if (rawTrack === 'combined') {
+          res.status(400).json({
+            error: 'Day parameter requires a specific track (main, dsa, or azure).'
+          });
+          return;
+        }
+        if (!isTrackDayCurrentlyUnlockedCanonical(rawTrack, dayParam)) {
+          res.status(403).json({
+            error: `Day ${dayParam} of ${rawTrack.toUpperCase()} is locked until 00:00 IST on its scheduled date.`
+          });
+          return;
+        }
+      }
+
+      const preview = await getDailyEmailPreview({
+        track: rawTrack as TrackId | 'combined',
+        day: dayParam
+      });
+
+      if (req.query.format === 'html') {
+        res.setHeader('Content-Type', 'text/html; charset=utf-8');
+        res.send(preview.html);
+        return;
+      }
+
+      res.json({
+        ok: true,
+        ...preview
+      });
+    } catch (err) {
+      res.status(500).json({
+        error: err instanceof Error ? err.message : 'Failed to generate daily email preview.'
       });
     }
   });
@@ -178,6 +275,7 @@ export async function createApp(options?: CreateAppOptions): Promise<Express> {
       const vite = await createViteServer({
         server: {
           middlewareMode: true,
+          allowedHosts: true,
           hmr: process.env.DISABLE_HMR !== 'true'
         },
         appType: 'spa'

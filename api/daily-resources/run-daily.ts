@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { verifyOwnerAuthHeader } from '../../server/auth.ts';
 import { runDailyAutomationJob } from '../../server/dailyResourcesService.ts';
+import { applyApiSecurityAndCorsHeaders } from '../../server/httpCors.ts';
 
 function sendJson(res: ServerResponse, status: number, body: unknown) {
   res.statusCode = status;
@@ -28,6 +29,15 @@ export default async function handler(
   req: IncomingMessage & { body?: unknown },
   res: ServerResponse
 ) {
+  if (
+    applyApiSecurityAndCorsHeaders(req, res, {
+      allowMethods: 'POST, OPTIONS',
+      noStore: true
+    })
+  ) {
+    return;
+  }
+
   if (req.method !== 'POST') {
     return sendJson(res, 405, { error: 'Method not allowed' });
   }

@@ -11,12 +11,17 @@ import {
   fetchLatestAutomationRunFromSupabase,
   fetchTrackBriefFromSupabase,
   generateTrackDailyCanonical,
+  isSupabaseServerConfigured,
   isTrackDayCurrentlyUnlockedCanonical,
   syncAutomationRunToSupabase,
   syncTrackResourcesToSupabase,
   verifyCronRequest,
   type PipelineEnvConfig
 } from '../supabase/functions/daily-learning-resources/pipeline.ts';
+import {
+  selectVerificationApiKey,
+  verifyOwnerAuthHeader
+} from '../server/auth.ts';
 
 function makeJwtWithRole(role: string): string {
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
@@ -371,3 +376,91 @@ test('Step 2 Task 5C & 7: Automation run records track_statuses, start/end times
   assert.equal(verifyCronRequest('Bearer wrong', 'real-secret').status, 401);
   assert.equal(verifyCronRequest('Bearer real-secret', 'real-secret').authorized, true);
 });
+
+test('Step 1 Repair: Validates 9-variable UUID/email/anon-key parity, skips invalid SUPABASE_ANON_KEY, and enforces Owner UUID + email', async () => {
+  const safeAnonKey = 'sb_publishable_valid_client_key_123456';
+  const badReport = validateSupabaseEnvironment({
+    VITE_SUPABASE_URL: 'https://bclbfqhetjiobmskecqv.supabase.co',
+    VITE_SUPABASE_ANON_KEY: safeAnonKey,
+    VITE_OWNER_AUTH_EMAIL: 'mypreparation0111@gmail.com',
+    VITE_OWNER_USER_ID: 'not-a-valid-36-char-uuid',
+    SUPABASE_URL: 'https://bclbfqhetjiobmskecqv.supabase.co',
+    SUPABASE_ANON_KEY: 'corrupted-35-char-non-sb-publishable',
+    SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_valid_server_key_123456',
+    OWNER_SUPABASE_USER_ID: 'not-a-valid-36-char-uuid',
+    OWNER_SUPABASE_EMAIL: 'mypreparation0111@gmail.com',
+    CRON_SECRET: 'strong-cron-secret-over-24-chars'
+  });
+
+  assert.equal(badReport.isClientReady, true);
+  assert.equal(badReport.ownerUserIdIsValidUuid, false);
+  assert.equal(badReport.viteOwnerUserIdIsValidUuid, false);
+  assert.equal(badReport.isServerDbReady, false);
+  assert.equal(badReport.clientAndServerAnonKeysMatch, false);
+  assert.ok(badReport.warnings.some((w) => /OWNER_SUPABASE_USER_ID is not a valid/i.test(w)));
+  assert.ok(badReport.warnings.some((w) => /SUPABASE_ANON_KEY format is unrecognized/i.test(w)));
+
+  // selectVerificationApiKey must skip corrupted unknown SUPABASE_ANON_KEY and pick valid VITE_SUPABASE_ANON_KEY
+  const chosenKey = selectVerificationApiKey({
+    SUPABASE_ANON_KEY: 'corrupted-unknown-key',
+    VITE_SUPABASE_ANON_KEY: safeAnonKey,
+    SUPABASE_SERVICE_ROLE_KEY: 'sb_secret_valid_server_key_123456'
+  });
+  assert.equal(chosenKey, safeAnonKey);
+
+  // Verify verifyOwnerAuthHeader uses valid VITE_SUPABASE_ANON_KEY & enforces BOTH UUID and Email
+  const ownerUuid = '11111111-1111-1111-1111-111111111111';
+  let capturedApiKey = '';
+  const emailMismatch = await verifyOwnerAuthHeader('Bearer valid.owner.jwt', {
+    env: {
+      SUPABASE_URL: EXPECTED_SUPABASE_URL,
+      SUPABASE_ANON_KEY: 'corrupted-unknown-key',
+      VITE_SUPABASE_ANON_KEY: safeAnonKey,
+      OWNER_SUPABASE_USER_ID: ownerUuid,
+      OWNER_SUPABASE_EMAIL: 'mypreparation0111@gmail.com'
+    },
+    fetchImpl: async (_input, init) => {
+      capturedApiKey = new Headers(init?.headers || {}).get('apikey') || '';
+      return new Response(JSON.stringify({ id: ownerUuid, email: 'wrong-person@example.com' }), {
+        status: 200
+      });
+    }
+  });
+  assert.equal(capturedApiKey, safeAnonKey);
+  assert.equal(emailMismatch.authorized, false);
+  assert.equal(emailMismatch.status, 403);
+
+  const malformedServerUuid = await verifyOwnerAuthHeader('Bearer valid.owner.jwt', {
+    env: {
+      SUPABASE_URL: EXPECTED_SUPABASE_URL,
+      VITE_SUPABASE_ANON_KEY: safeAnonKey,
+      OWNER_SUPABASE_USER_ID: 'not-a-valid-36-char-uuid',
+      OWNER_SUPABASE_EMAIL: 'mypreparation0111@gmail.com'
+    },
+    fetchImpl: async () =>
+      new Response(JSON.stringify({ id: ownerUuid, email: 'mypreparation0111@gmail.com' }), {
+        status: 200
+      })
+  });
+  assert.equal(malformedServerUuid.authorized, false);
+  assert.equal(malformedServerUuid.status, 403);
+
+  // Pipeline rejects non-UUID ownerUserId before hitting PostgREST
+  assert.equal(
+    isSupabaseServerConfigured({
+      supabaseUrl: EXPECTED_SUPABASE_URL,
+      supabaseServiceRoleKey: 'sb_secret_valid_server_key_123456',
+      ownerUserId: 'short-invalid-id'
+    }),
+    false
+  );
+  assert.equal(
+    isSupabaseServerConfigured({
+      supabaseUrl: EXPECTED_SUPABASE_URL,
+      supabaseServiceRoleKey: 'sb_secret_valid_server_key_123456',
+      ownerUserId: ownerUuid
+    }),
+    true
+  );
+});
+

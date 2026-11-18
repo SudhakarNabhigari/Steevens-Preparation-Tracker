@@ -339,12 +339,6 @@ const TOPIC_TRIPLETS = {
     p('Hard', '239', 'Sliding Window Maximum', 'sliding-window-maximum', 'Maintain a monotonic std::deque of candidate indices in O(n) time.', 'Directly exercises std::deque front/back operations taught in Day 29.')
   ] as Triplet,
 
-  stlSetMap: [
-    p('Easy', '217', 'Contains Duplicate', 'contains-duplicate', 'Detect duplicate values in O(n) average time using std::unordered_set.', 'Directly practices set uniqueness vs duplicate checking from Day 30.'),
-    p('Medium', '49', 'Group Anagrams', 'group-anagrams', 'Group words by canonical key inside std::unordered_map<string, vector<string>>.', 'Applies ordered/unordered map key-value grouping in C++.'),
-    p('Hard', '128', 'Longest Consecutive Sequence', 'longest-consecutive-sequence', 'Achieve O(n) consecutive sequence detection via std::unordered_set lookups.', 'Notice: rated Medium/classic O(n) set lookup; pair with #41 or #149? Wait: use real Hard #336 or #30!')
-  ] as Triplet,
-
   stlSetMapVerified: [
     p('Easy', '217', 'Contains Duplicate', 'contains-duplicate', 'Detect duplicate values in O(n) average time using std::unordered_set.', 'Directly practices set uniqueness and duplicate checking from Day 30.'),
     p('Medium', '49', 'Group Anagrams', 'group-anagrams', 'Group words by canonical frequency key using std::unordered_map.', 'Classic C++ map key-value grouping exercise.'),
@@ -475,12 +469,6 @@ const TOPIC_TRIPLETS = {
     p('Easy', '70', 'Climbing Stairs', 'climbing-stairs', 'Write recurrence dp[i] = dp[i-1] + dp[i-2] with base states.', 'Exact match to Day 59 climbing stairs task.'),
     p('Medium', '198', 'House Robber', 'house-robber', 'Write recurrence dp[i] = max(dp[i-1], nums[i] + dp[i-2]) before coding.', 'Exact match to Day 59 house robber recurrence exercise.'),
     p('Hard', '1235', 'Maximum Profit in Job Scheduling', 'maximum-profit-in-job-scheduling', 'Sort intervals by end time and combine 1D DP transitions with binary search.', 'Scales 1D take-or-skip DP to weighted interval transitions.')
-  ] as Triplet,
-
-  dp2d: [
-    p('Easy', '119', "Pascal's Triangle II", 'pascals-triangle-ii', 'Compute 2D row-transition states and compress space down to 1D.', 'Introduces 2D table dependencies and rolling-array optimization.'),
-    p('Medium', '62', 'Unique Paths', 'unique-paths', 'Fill an m×n 2D grid table where dp[r][c] = dp[r-1][c] + dp[r][c-1].', 'Exact match to Day 60 unique paths grid DP task.'),
-    p('Hard', '72', 'Edit Distance', 'edit-distance', 'Construct a 2D DP matrix comparing insert, delete, and replace transitions.', 'Note: #72 was historically Medium on LeetCode; keep #115 Distinct Subsequences or #44 Wildcard Matching as verified Hard! Let’s use #115 Distinct Subsequences!')
   ] as Triplet,
 
   dp2dVerified: [
@@ -695,47 +683,56 @@ function docRef(
   };
 }
 
+function hasAnyTerm(text: string, terms: string[]): boolean {
+  return terms.some((term) => {
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`\\b${escaped}\\b`, 'i').test(text);
+  });
+}
+
 export function getOfficialDocsForTrackDay(
   ctx: CurriculumDayContext
 ): DailyReferenceLink[] {
+  const topicText = ctx.topic.toLowerCase();
+  const phaseText = ctx.phaseOrModule.toLowerCase();
+
   if (ctx.trackId === 'main') {
-    const t = ctx.topic.toLowerCase();
     const docs: DailyReferenceLink[] = [];
 
-    if (t.includes('python refresh') || t.includes('environment') || t.includes('runtime')) {
+    if (hasAnyTerm(topicText, ['python refresh', 'environment', 'environments', 'runtime'])) {
       docs.push(
         docRef('py_docs', 'Python 3 Official Documentation — Typing & Exceptions', 'https://docs.python.org/3/library/typing.html', 'Official Python typing and runtime reference for dataclasses, annotations, and error hierarchies.', 'Python Software Foundation'),
         docRef('py_async', 'Python asyncio — Asynchronous I/O Documentation', 'https://docs.python.org/3/library/asyncio.html', 'Official reference for async/await event loops and non-blocking I/O.', 'Python Software Foundation')
       );
-    } else if (t.includes('fastapi') || t.includes('http') || t.includes('rest') || t.includes('health') || t.includes('api')) {
+    } else if (hasAnyTerm(topicText, ['fastapi', 'http', 'rest', 'health', 'api'])) {
       docs.push(
         docRef('fastapi_docs', 'FastAPI Official Tutorial & Reference', 'https://fastapi.tiangolo.com/tutorial/', 'Official FastAPI documentation covering routes, Pydantic validation, status codes, and dependencies.', 'FastAPI Docs'),
         docRef('pydantic_docs', 'Pydantic Settings & Validation Docs', 'https://docs.pydantic.dev/latest/concepts/pydantic_settings/', 'Official Pydantic v2 BaseSettings configuration and schema validation documentation.', 'Pydantic Docs')
       );
-    } else if (t.includes('react') || t.includes('frontend') || t.includes('ui') || t.includes('component') || t.includes('state') || t.includes('streaming')) {
+    } else if (hasAnyTerm(topicText, ['react', 'frontend', 'ui', 'component', 'components', 'state', 'streaming'])) {
       docs.push(
         docRef('react_docs', 'React Official Learn Documentation', 'https://react.dev/learn', 'Official React guide covering components, state boundaries, hooks, and UI architecture.', 'React Docs'),
         docRef('ts_docs', 'TypeScript Handbook', 'https://www.typescriptlang.org/docs/handbook/intro.html', 'Official TypeScript handbook for typed API contracts and component props.', 'TypeScript Docs')
       );
-    } else if (t.includes('git') || t.includes('ci') || t.includes('cd') || t.includes('workflow')) {
+    } else if (hasAnyTerm(topicText, ['test', 'testing', 'eval', 'evaluation', 'recall', 'precision', 'regression'])) {
+      docs.push(
+        docRef('pytest_docs', 'pytest Official Documentation', 'https://docs.pytest.org/en/stable/', 'Official pytest documentation for unit, integration, and fixture-driven API tests.', 'pytest Docs'),
+        docRef('fastapi_test', 'FastAPI Testing Guide', 'https://fastapi.tiangolo.com/tutorial/testing/', 'Official TestClient documentation for verifying FastAPI endpoints.', 'FastAPI Docs')
+      );
+    } else if (hasAnyTerm(topicText, ['git', 'ci', 'cd', 'workflow'])) {
       docs.push(
         docRef('git_docs', 'Official Git Reference Manual', 'https://git-scm.com/docs', 'Authoritative Git CLI reference for branching, merging, and clean commits.', 'Git SCM'),
         docRef('gh_actions', 'GitHub Actions Documentation', 'https://docs.github.com/en/actions', 'Official CI/CD workflow reference for automated testing and deployment pipelines.', 'GitHub Docs')
       );
-    } else if (t.includes('database') || t.includes('sql') || t.includes('vector') || t.includes('postgres') || t.includes('chunk') || t.includes('embedding') || t.includes('retrieval') || t.includes('rag') || t.includes('llm')) {
+    } else if (hasAnyTerm(topicText, ['database', 'sql', 'vector', 'postgres', 'postgresql', 'chunk', 'chunking', 'embedding', 'embeddings', 'retrieval', 'rag', 'llm'])) {
       docs.push(
         docRef('pg_docs', 'PostgreSQL Official Documentation', 'https://www.postgresql.org/docs/current/', 'Official PostgreSQL documentation for relational entities, indexing, and transactions.', 'PostgreSQL Docs'),
         docRef('gemini_api_docs', 'Google Gemini API Official Documentation', 'https://ai.google.dev/gemini-api/docs', 'Official Gemini API guide covering text generation, structured JSON outputs, and embeddings.', 'Google AI for Developers')
       );
-    } else if (t.includes('container') || t.includes('docker') || t.includes('deploy')) {
+    } else if (hasAnyTerm(topicText, ['container', 'containers', 'docker', 'deploy', 'deployment'])) {
       docs.push(
         docRef('docker_docs', 'Docker Official Documentation', 'https://docs.docker.com/get-started/', 'Official Docker guide for multi-stage builds, containerization, and Compose setups.', 'Docker Docs'),
         docRef('fastapi_deploy', 'FastAPI Deployment Guide', 'https://fastapi.tiangolo.com/deployment/', 'Official FastAPI production deployment and container architecture guidance.', 'FastAPI Docs')
-      );
-    } else if (t.includes('test') || t.includes('eval') || t.includes('recall') || t.includes('precision') || t.includes('regression')) {
-      docs.push(
-        docRef('pytest_docs', 'pytest Official Documentation', 'https://docs.pytest.org/en/stable/', 'Official pytest documentation for unit, integration, and fixture-driven API tests.', 'pytest Docs'),
-        docRef('fastapi_test', 'FastAPI Testing Guide', 'https://fastapi.tiangolo.com/tutorial/testing/', 'Official TestClient documentation for verifying FastAPI endpoints.', 'FastAPI Docs')
       );
     } else {
       docs.push(
@@ -747,19 +744,18 @@ export function getOfficialDocsForTrackDay(
   }
 
   if (ctx.trackId === 'dsa') {
-    const t = ctx.topic.toLowerCase();
-    if (t.includes('vector') || t.includes('stack') || t.includes('queue') || t.includes('set') || t.includes('map') || t.includes('priority') || t.includes('stl') || t.includes('iterator')) {
+    if (hasAnyTerm(topicText, ['vector', 'vectors', 'stack', 'stacks', 'queue', 'queues', 'deque', 'set', 'sets', 'map', 'maps', 'priority', 'stl', 'iterator', 'iterators'])) {
       return [
         docRef('cpp_containers', 'cppreference — C++ Containers Library', 'https://en.cppreference.com/w/cpp/container', 'Authoritative reference for vector, stack, queue, deque, set, map, and priority_queue.', 'cppreference'),
         docRef('cpp_algo', 'cppreference — C++ Algorithms Library', 'https://en.cppreference.com/w/cpp/algorithm', 'Official reference for sort, lower_bound, upper_bound, binary_search, and iterators.', 'cppreference')
       ];
     }
-    if (t.includes('string')) {
+    if (hasAnyTerm(topicText, ['string', 'strings'])) {
       return [
         docRef('cpp_string', 'cppreference — std::basic_string', 'https://en.cppreference.com/w/cpp/string/basic_string', 'Complete C++ std::string methods reference (substr, find, length, compare).', 'cppreference')
       ];
     }
-    if (t.includes('class') || t.includes('struct') || t.includes('object') || t.includes('pointer')) {
+    if (hasAnyTerm(topicText, ['class', 'classes', 'struct', 'structs', 'object', 'object-oriented', 'pointer', 'pointers'])) {
       return [
         docRef('cpp_classes', 'cppreference — Classes & Structs', 'https://en.cppreference.com/w/cpp/language/classes', 'Official reference covering C++ constructors, access specifiers, inheritance, and pointers.', 'cppreference')
       ];
@@ -771,35 +767,40 @@ export function getOfficialDocsForTrackDay(
   }
 
   // Azure Track — strictly Official Microsoft Learn links!
-  const t = ctx.topic.toLowerCase();
-  if (t.includes('search') || t.includes('rag') || t.includes('hybrid') || t.includes('capstone search')) {
+  if (hasAnyTerm(topicText, ['search', 'rag', 'hybrid search', 'hybrid retrieval', 'capstone search'])) {
     return [
       docRef('ms_aisearch', 'Microsoft Learn — Azure AI Search Documentation', 'https://learn.microsoft.com/en-us/azure/search/', 'Official Microsoft Learn documentation for indexes, indexers, vector search, and hybrid retrieval.', 'Microsoft Learn'),
       docRef('ms_rag', 'Microsoft Learn — RAG Architecture in Azure AI Search', 'https://learn.microsoft.com/en-us/azure/search/retrieval-augmented-generation-overview', 'Official Microsoft guide to RAG pipelines, chunking, and grounding citations.', 'Microsoft Learn')
     ];
   }
-  if (t.includes('generative') || t.includes('foundry') || t.includes('prompt') || t.includes('deployment') || t.includes('safety')) {
+  if (hasAnyTerm(topicText, ['generative', 'genai', 'foundry', 'prompt', 'deployment', 'safety'])) {
     return [
       docRef('ms_foundry', 'Microsoft Learn — Azure AI Foundry Documentation', 'https://learn.microsoft.com/en-us/azure/ai-foundry/', 'Official Microsoft Learn documentation for Azure AI Foundry projects, model deployments, and prompt engineering.', 'Microsoft Learn'),
       docRef('ms_openai_safety', 'Microsoft Learn — Azure AI Content Safety', 'https://learn.microsoft.com/en-us/azure/ai-services/content-safety/overview', 'Official Microsoft documentation for content filtering, prompt shields, and AI safety.', 'Microsoft Learn')
     ];
   }
-  if (t.includes('document intelligence') || t.includes('vision') || t.includes('language') || t.includes('speech') || t.includes('conversational') || t.includes('ai workload') || t.includes('ai-102') || t.includes('machine learning')) {
-    return [
-      docRef('ms_aisvc', 'Microsoft Learn — Azure AI Services Documentation', 'https://learn.microsoft.com/en-us/azure/ai-services/', 'Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.', 'Microsoft Learn'),
-      docRef('ms_ai102', 'Microsoft Learn — Exam AI-102 Study & Training Path', 'https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/', 'Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.', 'Microsoft Learn')
-    ];
-  }
-  if (t.includes('sql') || t.includes('relational') || t.includes('oltp') || t.includes('cosmos') || t.includes('non-relational') || t.includes('analytics') || t.includes('dp-900')) {
+  if (
+    hasAnyTerm(topicText, ['sql', 'relational', 'non-relational', 'oltp', 'olap', 'cosmos', 'analytics', 'dp-900', 'data-model']) ||
+    (hasAnyTerm(topicText, ['weekly']) && phaseText.includes('dp-900'))
+  ) {
     return [
       docRef('ms_sql', 'Microsoft Learn — Azure SQL Documentation', 'https://learn.microsoft.com/en-us/azure/azure-sql/', 'Official comparison and documentation for Azure SQL Database, Managed Instance, and SQL VMs.', 'Microsoft Learn'),
       docRef('ms_cosmos', 'Microsoft Learn — Azure Cosmos DB Documentation', 'https://learn.microsoft.com/en-us/azure/cosmos-db/', 'Official Microsoft Learn reference for Cosmos DB containers, items, and partition keys.', 'Microsoft Learn')
     ];
   }
-  if (t.includes('storage') || t.includes('network') || t.includes('compute') || t.includes('identity') || t.includes('security') || t.includes('pricing') || t.includes('monitor')) {
+  if (hasAnyTerm(topicText, ['storage', 'network', 'networking', 'compute', 'identity', 'security', 'governance', 'pricing', 'budgets', 'slas', 'monitor', 'monitoring', 'core services', 'az-900'])) {
     return [
       docRef('ms_arch', 'Microsoft Learn — Azure Core Cloud Services Documentation', 'https://learn.microsoft.com/en-us/azure/', 'Official Microsoft Azure documentation hub for Compute, Networking, Storage, Identity, and Monitoring.', 'Microsoft Learn'),
       docRef('ms_az900', 'Microsoft Learn — Azure Fundamentals (AZ-900) Learning Path', 'https://learn.microsoft.com/en-us/training/courses/az-900t00', 'Official Microsoft Learn Azure Fundamentals training modules.', 'Microsoft Learn')
+    ];
+  }
+  if (
+    hasAnyTerm(topicText, ['document intelligence', 'vision', 'language', 'speech', 'conversational', 'ai workload', 'ai workloads', 'ai-102', 'machine learning', 'capstone']) ||
+    (hasAnyTerm(topicText, ['weekly']) && (phaseText.includes('ai-102') || phaseText.includes('capstone')))
+  ) {
+    return [
+      docRef('ms_aisvc', 'Microsoft Learn — Azure AI Services Documentation', 'https://learn.microsoft.com/en-us/azure/ai-services/', 'Official Microsoft documentation covering Vision, Document Intelligence, Language, and Speech services.', 'Microsoft Learn'),
+      docRef('ms_ai102', 'Microsoft Learn — Exam AI-102 Study & Training Path', 'https://learn.microsoft.com/en-us/credentials/certifications/azure-ai-engineer/', 'Official Azure AI Engineer Associate (AI-102) skills outline and learning modules.', 'Microsoft Learn')
     ];
   }
   return [

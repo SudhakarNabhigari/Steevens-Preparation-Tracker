@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 export const LoginScreen: React.FC = () => {
-  const { login, isSupabaseAuthConfigured, lastAuthError } = useApp();
+  const { login, isSupabaseAuthConfigured, lastAuthError, clearAuthError } = useApp();
 
   // Active option: 'owner' (Steeven) or 'guest' (Guest)
   const [selectedOption, setSelectedOption] = useState<UserRole>('owner');
@@ -27,6 +27,7 @@ export const LoginScreen: React.FC = () => {
   const handleSelectOption = (option: UserRole) => {
     setSelectedOption(option);
     setErrorMessage(null);
+    clearAuthError();
     setUsername('');
     setPassword('');
   };
@@ -43,15 +44,10 @@ export const LoginScreen: React.FC = () => {
     setIsLoading(true);
 
     try {
-      const success = await login(username, password, selectedOption);
-      if (!success) {
-        setErrorMessage(
-          lastAuthError || 'Login failed. Check your credentials and connection.'
-        );
-      }
+      await login(username, password, selectedOption);
     } catch (error) {
       console.error('Login request failed:', error);
-      setErrorMessage('Unable to sign in. Please try again.');
+      setErrorMessage('Unable to sign in. Check your network connection and try again.');
     } finally {
       setIsLoading(false);
     }
