@@ -1,4 +1,4 @@
-import { TrackChecklistItem, TrackDaySchedule } from '../types';
+import type { TrackChecklistItem, TrackDaySchedule } from '../types';
 
 export const AZURE_PDF_URL = '/assets/aistudio/Azure_100_Day_180_Style_Daily_Curriculum_a614b703.pdf';
 export const AZURE_PDF_FILENAME = 'Azure_100_Day_180_Style_Daily_Curriculum.pdf';

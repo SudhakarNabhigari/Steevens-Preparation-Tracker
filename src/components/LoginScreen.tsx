@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { UserRole } from '../types';
 import {
@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 
 export const LoginScreen: React.FC = () => {
-  const { login } = useApp();
+  const { login, isSupabaseAuthConfigured, lastAuthError } = useApp();
 
   // Active option: 'owner' (Steeven) or 'guest' (Guest)
   const [selectedOption, setSelectedOption] = useState<UserRole>('owner');
@@ -45,7 +45,9 @@ export const LoginScreen: React.FC = () => {
     try {
       const success = await login(username, password, selectedOption);
       if (!success) {
-        setErrorMessage('Login failed. Check your credentials and internet connection.');
+        setErrorMessage(
+          lastAuthError || 'Login failed. Check your credentials and connection.'
+        );
       }
     } catch (error) {
       console.error('Login request failed:', error);
@@ -113,9 +115,9 @@ export const LoginScreen: React.FC = () => {
           </div>
 
           {/* Clean Generic Error Message */}
-          {errorMessage && (
+          {(errorMessage || lastAuthError) && (
             <div className="mb-5 p-3 rounded-xl bg-[#FEE2E2] border border-[#FCA5A5] text-[#991B1B] text-xs">
-              {errorMessage}
+              {errorMessage || lastAuthError}
             </div>
           )}
 
@@ -123,7 +125,9 @@ export const LoginScreen: React.FC = () => {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs font-medium text-[#292929] mb-1.5">
-                Username
+                {selectedOption === 'owner' && isSupabaseAuthConfigured
+                  ? 'Owner Email or Username'
+                  : 'Username'}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[#736E65]">
@@ -134,7 +138,11 @@ export const LoginScreen: React.FC = () => {
                   required
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter username"
+                  placeholder={
+                    selectedOption === 'owner' && isSupabaseAuthConfigured
+                      ? 'Enter Supabase Owner email or Steeven'
+                      : 'Enter username'
+                  }
                   className="w-full pl-9 pr-3 py-2.5 bg-[#FAF8F5] border border-[#D5D0C7] rounded-xl text-[#292929] text-sm placeholder:text-[#9B968D] focus:outline-none focus:border-[#E7826D] focus:ring-1 focus:ring-[#E7826D] transition-colors"
                 />
               </div>

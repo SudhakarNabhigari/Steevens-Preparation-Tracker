@@ -40,7 +40,8 @@ import {
   Calendar,
   ArrowLeft,
   Search,
-  Lock
+  Lock,
+  Sparkles
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -66,7 +67,8 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
     saveTrackRevisionRecord,
     startTimer,
     activeTimer,
-    setCurrentPage
+    setCurrentPage,
+    openDailyAiResources
   } = useApp();
 
   const isDsa = trackId === 'dsa';
@@ -245,6 +247,13 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
 
         {/* Authoritative PDF Reference Actions */}
         <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <button
+            onClick={() => openDailyAiResources(trackId, day.dayNumber)}
+            className="px-3 py-2 rounded-xl bg-[#292929] hover:bg-[#3A3A3A] text-[#F3EFE6] text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-[#E7826D]" />
+            <span>Day {day.dayNumber} AI Resources</span>
+          </button>
           <button
             onClick={() => setShowOverview(!showOverview)}
             className="px-3 py-2 rounded-xl bg-white border border-[#E0DCD3] hover:bg-[#FAF8F5] text-xs font-semibold text-[#292929] cursor-pointer shadow-sm"

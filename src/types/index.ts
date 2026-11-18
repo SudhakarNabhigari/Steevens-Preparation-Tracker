@@ -260,7 +260,12 @@ export interface SharedOwnerContent {
 
 export interface UserState {
   username: string;
-  passwordHash: string; // Stored securely
+  passwordHash: string; // Always scrubbed to '' before persistence; never save passwords in browser storage
+  authVerifier?: string; // One-way SHA-256 verifier for pre-Supabase local transition only
+  cloudSyncMeta?: {
+    lastSyncedAt?: string;
+    ownerUserId?: string;
+  };
   role: UserRole; // 'owner' (Steeven) or 'guest' (Guest)
   isAuthenticated: boolean;
   completedTasks: Record<string, boolean>; // key: `${dayNumber}_${taskId}` -> boolean (Main 180-day plan)
@@ -284,6 +289,7 @@ export interface UserState {
   resources: ResourceItem[];
   doubtEntries: DoubtEntry[];
   sharedSettings: SharedAppSettings;
+  dailyAiResourceCompletions?: Record<string, boolean>;
 }
 
 export type SaveStatus = 'saved' | 'saving' | 'error';
@@ -355,3 +361,117 @@ export interface DoubtEntry {
   additionalNotes: string;
 }
 
+export type DailyResourceStatus =
+  | 'loading'
+  | 'updated'
+  | 'partially_updated'
+  | 'cached'
+  | 'failed'
+  | 'unavailable';
+
+export interface DailyYouTubeResource {
+  id: string;
+  title: string;
+  channelName: string;
+  url: string;
+  videoId?: string;
+  topicCovered: string;
+  explanation: string;
+  whyUseful: string;
+  duration?: string;
+  language?: string;
+  isVerifiedVideo: boolean;
+  linkKind: 'verified_video' | 'youtube_search_fallback';
+}
+
+export interface DailyLeetCodeQuestion {
+  slot: 1 | 2 | 3;
+  difficulty: 'Easy' | 'Medium' | 'Hard';
+  available: boolean;
+  problemNumber?: string;
+  title?: string;
+  slug?: string;
+  url?: string;
+  shortExplanation: string;
+  whyMatchesTopic: string;
+  whyUnavailable?: string;
+  isVerified: boolean;
+}
+
+export interface DailyReferenceLink {
+  id: string;
+  resourceType: 'official_documentation' | 'practical_exercise' | 'reference';
+  title: string;
+  url?: string;
+  description: string;
+  sourceLabel: string;
+  isVerifiedUrl: boolean;
+}
+
+export interface TrackDailyAiResources {
+  trackId: TrackId;
+  trackLabel: string;
+  planDay: number;
+  planDate: string;
+  dateLabel: string;
+  topicTitle: string;
+  phaseOrModule: string;
+  learningObjectives: string[];
+  topicExplanation: string;
+  suggestedLearningOrder: string[];
+  dailyGuidance: string;
+  practicalExerciseSummary: string;
+  youtubeTutorials: DailyYouTubeResource[];
+  leetcodeQuestions: DailyLeetCodeQuestion[];
+  officialDocs: DailyReferenceLink[];
+  practicalExercises: DailyReferenceLink[];
+  status: DailyResourceStatus;
+  statusMessage: string;
+  aiProviderStatus: 'gemini_generated' | 'quota_exhausted_cached' | 'missing_api_key' | 'unavailable';
+  youtubeProviderStatus: 'youtube_api_verified' | 'search_fallback_no_key' | 'search_fallback_quota' | 'unavailable';
+  modelUsed?: string;
+  generatedAt: string;
+  updatedAt: string;
+}
+
+export interface DailyAutomationStatus {
+  scheduleLabel: string;
+  timezone: string;
+  recipientEmail: string;
+  lastRunDate: string | null;
+  lastRunAt: string | null;
+  overallStatus: 'success' | 'partial' | 'failed' | 'not_run_yet';
+  emailStatus: 'sent' | 'failed' | 'awaiting_credentials' | 'awaiting_sender_verification' | 'not_sent';
+  emailProviderId?: string | null;
+  emailError?: string | null;
+  missingSecrets: string[];
+  geminiConfigured: boolean;
+  youtubeConfigured: boolean;
+  resendConfigured: boolean;
+  resendSenderConfigured: boolean;
+  supabaseServerConfigured: boolean;
+}
+
+export interface DailyResourcesDashboardPayload {
+  istDate: string;
+  istDateLabel: string;
+  isPreparationStarted: boolean;
+  unlockedDays: {
+    main: number;
+    dsa: number;
+    azure: number;
+  };
+  tracks: {
+    main: TrackDailyAiResources | null;
+    dsa: TrackDailyAiResources | null;
+    azure: TrackDailyAiResources | null;
+  };
+  automation: DailyAutomationStatus;
+  actionPlan: {
+    studyFirst: string;
+    tutorialsToWatch: string;
+    leetcodeFirst: string;
+    practicalExercise: string;
+    sequence: string[];
+  };
+}

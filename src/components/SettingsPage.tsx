@@ -20,6 +20,8 @@ export const SettingsPage: React.FC = () => {
   const {
     state,
     updateCredentials,
+    isSupabaseAuthConfigured,
+    isOwnerSupabaseSessionActive,
     updateSharedSettings,
     refreshSharedContent,
     resetAllData,
@@ -36,7 +38,8 @@ export const SettingsPage: React.FC = () => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
-  const [savedSuccess, setSavedSuccess] = useState(false);
+  const [savedSuccess, setSavedSuccess] = useState<string | null>(null);
+  const [isUpdatingCredentials, setIsUpdatingCredentials] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // Shared Application Settings form state (Owner editable, Guest read-only)
@@ -60,9 +63,10 @@ export const SettingsPage: React.FC = () => {
     }
   }, [state.sharedSettings]);
 
-  const handleSaveCredentials = (e: React.FormEvent) => {
+  const handleSaveCredentials = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
+    setSavedSuccess(null);
 
     if (!isOwner) {
       setErrorMsg('Guest mode cannot change owner credentials.');
@@ -74,12 +78,23 @@ export const SettingsPage: React.FC = () => {
       return;
     }
 
-    // If new password provided, update; otherwise update username
-    updateCredentials(username.trim() || state.username, newPassword || state.passwordHash);
-    setNewPassword('');
-    setConfirmPassword('');
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 2500);
+    setIsUpdatingCredentials(true);
+    try {
+      const result = await updateCredentials(
+        username.trim() || state.username,
+        newPassword || undefined
+      );
+      if (!result.success) {
+        setErrorMsg(result.message);
+        return;
+      }
+      setNewPassword('');
+      setConfirmPassword('');
+      setSavedSuccess(result.message);
+      setTimeout(() => setSavedSuccess(null), 3500);
+    } finally {
+      setIsUpdatingCredentials(false);
+    }
   };
 
   const handleSaveSharedPreferences = (e: React.FormEvent) => {
@@ -275,15 +290,32 @@ export const SettingsPage: React.FC = () => {
       {/* Profile & Security Credentials Card (Owner Only) */}
       {isOwner && (
         <div className="bg-white border border-[#E0DCD3] rounded-2xl p-6 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 text-sm font-bold text-[#292929] uppercase tracking-wider border-b border-[#E0DCD3] pb-3">
-            <User className="w-4 h-4 text-[#E7826D]" />
-            <span>Account Security & Credentials</span>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E0DCD3] pb-3">
+            <div className="flex items-center gap-2 text-sm font-bold text-[#292929] uppercase tracking-wider">
+              <User className="w-4 h-4 text-[#E7826D]" />
+              <span>Account Security &amp; Credentials</span>
+            </div>
+            <span
+              className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
+                isOwnerSupabaseSessionActive
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                  : isSupabaseAuthConfigured
+                  ? 'bg-amber-50 text-amber-800 border-amber-200'
+                  : 'bg-stone-100 text-stone-700 border-stone-200'
+              }`}
+            >
+              {isOwnerSupabaseSessionActive
+                ? 'SUPABASE AUTH VERIFIED'
+                : isSupabaseAuthConfigured
+                ? 'SUPABASE CONFIGURED · SIGN IN REQUIRED'
+                : 'LOCAL TRANSITION MODE (AWAITING SUPABASE AUTH)'}
+            </span>
           </div>
 
           {savedSuccess && (
             <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
               <Check className="w-4 h-4 text-[#16A34A]" />
-              <span className="font-semibold">Security credentials updated successfully!</span>
+              <span className="font-semibold">{savedSuccess}</span>
             </div>
           )}
 
@@ -347,10 +379,11 @@ export const SettingsPage: React.FC = () => {
 
             <button
               type="submit"
-              className="px-4 py-2 bg-[#292929] hover:bg-[#404040] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors uppercase tracking-wider"
+              disabled={isUpdatingCredentials}
+              className="px-4 py-2 bg-[#292929] hover:bg-[#404040] disabled:opacity-50 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors uppercase tracking-wider"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>Update Credentials</span>
+              <span>{isUpdatingCredentials ? 'Updating...' : 'Update Credentials'}</span>
             </button>
           </form>
         </div>

@@ -46,6 +46,7 @@ import {
   OWNER_STORAGE_KEY,
   GUEST_STORAGE_KEY,
   DEFAULT_OWNER_STATE,
+  DEFAULT_GUEST_STATE,
   exportBackupJson,
   importBackupJson,
   loadSharedContentAsync,
@@ -55,6 +56,17 @@ import {
   extractSharedContentFromOwner,
   saveSharedContent
 } from '../services/storage';
+import {
+  configuredOwnerEmail,
+  configuredOwnerUserId,
+  isSupabaseConfigured,
+  supabase
+} from '../lib/supabase';
+import {
+  computeOwnerTransitionVerifier,
+  verifyGuestLocalPassword,
+  verifyOwnerTransitionPassword
+} from '../utils/authCrypto';
 
 export type NavigationPage =
   | 'login'
@@ -72,7 +84,8 @@ export type NavigationPage =
   | 'settings'
   | 'resource_library'
   | 'doubt_notebook'
-  | 'preparation_calendar';
+  | 'preparation_calendar'
+  | 'daily_ai_resources';
 
 interface AppContextType {
   state: UserState;
@@ -86,6 +99,9 @@ interface AppContextType {
   selectedAzureDay: number;
   setSelectedAzureDay: (day: number) => void;
   openDayForTrack: (track: TrackId, dayNumber: number) => void;
+  aiResourcesTarget: { trackId: TrackId; dayNumber: number } | null;
+  openDailyAiResources: (trackId?: TrackId, dayNumber?: number) => void;
+  toggleDailyAiResourceCompletion: (resourceKey: string) => void;
   saveStatus: SaveStatus;
 
   // Real clock & lock state
@@ -112,9 +128,15 @@ interface AppContextType {
   getTrackDayTaskCompletion: (track: TrackId, dayNumber: number) => { completed: number; total: number; percentage: number };
 
   // Authentication
-  login: (username: string, pass: string, targetRole: UserRole) => boolean;
+  login: (username: string, pass: string, targetRole: UserRole) => Promise<boolean>;
   logout: () => void;
-  updateCredentials: (username: string, password: string) => void;
+  updateCredentials: (
+    username: string,
+    password?: string
+  ) => Promise<{ success: boolean; message: string }>;
+  isSupabaseAuthConfigured: boolean;
+  isOwnerSupabaseSessionActive: boolean;
+  lastAuthError: string | null;
 
   // Main Plan Task & Notes Actions
   toggleTaskCompletion: (dayNumber: number, taskId: string) => void;
@@ -195,51 +217,103 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 const START_DATE_MS = new Date(START_DATE_IST).getTime();
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [state, setState] = useState<UserState>(() => loadRoleStateSync('owner'));
+  // Never preload Owner personal data into active React state prior to authentication.
+  const [state, setState] = useState<UserState>(() => ({
+    ...DEFAULT_GUEST_STATE,
+    isAuthenticated: false
+  }));
   const [currentPage, setCurrentPage] = useState<NavigationPage>('login');
-  const [selectedDayNumber, setSelectedDayNumberState] = useState<number>(() => state.lastActiveDayNumber || 1);
-  const [selectedDsaDay, setSelectedDsaDayState] = useState<number>(
-    () => state.dsaProgress?.lastActiveDayNumber || 1
-  );
-  const [selectedAzureDay, setSelectedAzureDayState] = useState<number>(
-    () => state.azureProgress?.lastActiveDayNumber || 1
-  );
+  const [selectedDayNumber, setSelectedDayNumberState] = useState<number>(1);
+  const [selectedDsaDay, setSelectedDsaDayState] = useState<number>(1);
+  const [selectedAzureDay, setSelectedAzureDayState] = useState<number>(1);
+  const [aiResourcesTarget, setAiResourcesTarget] = useState<{
+    trackId: TrackId;
+    dayNumber: number;
+  } | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [nowTimestamp, setNowTimestamp] = useState<number>(Date.now());
   const [testModeEnabled, setTestModeEnabled] = useState<boolean>(false);
   const [testModeDate, setTestModeDate] = useState<string | null>(null);
+  const [isOwnerSupabaseSessionActive, setIsOwnerSupabaseSessionActive] = useState<boolean>(false);
+  const [lastAuthError, setLastAuthError] = useState<string | null>(null);
 
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Rehydrate asynchronously from IndexedDB for maximum permanent persistence
-  useEffect(() => {
-    async function rehydrateFromDB() {
-      const key = state.role === 'owner' ? OWNER_STORAGE_KEY : GUEST_STORAGE_KEY;
-      const dbData = await loadFromIndexedDB(key);
+  const hydrateAuthenticatedOwnerLocalState = useCallback(() => {
+    const ownerState = loadRoleStateSync('owner');
+    ownerState.isAuthenticated = true;
+    ownerState.passwordHash = '';
+    setState(ownerState);
+    setSelectedDayNumberState(ownerState.lastActiveDayNumber || 1);
+    setSelectedDsaDayState(ownerState.dsaProgress?.lastActiveDayNumber || 1);
+    setSelectedAzureDayState(ownerState.azureProgress?.lastActiveDayNumber || 1);
+
+    loadFromIndexedDB(OWNER_STORAGE_KEY).then(async dbOwner => {
       if (
-        dbData &&
-        dbData.lastSavedTimestamp &&
-        (!state.lastSavedTimestamp || dbData.lastSavedTimestamp > state.lastSavedTimestamp)
+        dbOwner &&
+        dbOwner.lastSavedTimestamp &&
+        (!ownerState.lastSavedTimestamp || dbOwner.lastSavedTimestamp > ownerState.lastSavedTimestamp)
       ) {
-        const hydrated = hydrateUserState(dbData, state.role);
-        if (state.role === 'owner') {
-          await saveSharedContent(extractSharedContentFromOwner(hydrated));
-        }
-        setState(hydrated);
-        if (hydrated.lastActiveDayNumber) {
-          setSelectedDayNumberState(hydrated.lastActiveDayNumber);
-        }
+        const hydrated = hydrateUserState(
+          { ...dbOwner, passwordHash: '', isAuthenticated: true },
+          'owner'
+        );
+        await saveSharedContent(extractSharedContentFromOwner(hydrated));
+        setState(prev => (prev.role === 'owner' && prev.isAuthenticated ? hydrated : prev));
+        if (hydrated.lastActiveDayNumber) setSelectedDayNumberState(hydrated.lastActiveDayNumber);
         if (hydrated.dsaProgress?.lastActiveDayNumber) {
           setSelectedDsaDayState(hydrated.dsaProgress.lastActiveDayNumber);
         }
         if (hydrated.azureProgress?.lastActiveDayNumber) {
           setSelectedAzureDayState(hydrated.azureProgress.lastActiveDayNumber);
         }
+      } else {
+        await saveSharedContent(extractSharedContentFromOwner(ownerState));
       }
-    }
-    rehydrateFromDB();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    });
   }, []);
+
+  // Restore existing Supabase Auth Owner session cleanly if configured (never touches Guest)
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return;
+
+    let mounted = true;
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted || error || !data?.session?.user) return;
+      if (configuredOwnerUserId && data.session.user.id !== configuredOwnerUserId) {
+        void supabase?.auth.signOut();
+        return;
+      }
+      setIsOwnerSupabaseSessionActive(true);
+      hydrateAuthenticatedOwnerLocalState();
+      setCurrentPage(prev => (prev === 'login' ? 'home_dashboard' : prev));
+    });
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((event, session) => {
+      if (!mounted) return;
+      if (event === 'SIGNED_OUT' || !session) {
+        setIsOwnerSupabaseSessionActive(false);
+        setState(prev => {
+          if (prev.role === 'owner' && prev.isAuthenticated) {
+            return { ...DEFAULT_GUEST_STATE, isAuthenticated: false };
+          }
+          return prev;
+        });
+        setCurrentPage(prev => (prev === 'login' ? prev : 'login'));
+      } else if (session.user) {
+        if (configuredOwnerUserId && session.user.id !== configuredOwnerUserId) {
+          setIsOwnerSupabaseSessionActive(false);
+          return;
+        }
+        setIsOwnerSupabaseSessionActive(true);
+      }
+    });
+
+    return () => {
+      mounted = false;
+      subscription?.subscription?.unsubscribe();
+    };
+  }, [hydrateAuthenticatedOwnerLocalState]);
 
   const refreshSharedContent = useCallback(async () => {
     const latestShared = await loadSharedContentAsync();
@@ -325,6 +399,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     },
     [setSelectedDayNumber, setSelectedDsaDay, setSelectedAzureDay]
   );
+
+  const openDailyAiResources = useCallback(
+    (trackId?: TrackId, dayNumber?: number) => {
+      if (trackId && dayNumber) {
+        const maxDay = trackId === 'main' ? MAIN_TRACK_MAX_DAYS : SUB_TRACK_MAX_DAYS;
+        setAiResourcesTarget({
+          trackId,
+          dayNumber: Math.min(maxDay, Math.max(1, dayNumber))
+        });
+      }
+      setCurrentPage('daily_ai_resources');
+    },
+    []
+  );
+
+  const toggleDailyAiResourceCompletion = useCallback((resourceKey: string) => {
+    setState(prev => {
+      const current = prev.dailyAiResourceCompletions || {};
+      return {
+        ...prev,
+        dailyAiResourceCompletions: {
+          ...current,
+          [resourceKey]: !current[resourceKey]
+        }
+      };
+    });
+  }, []);
 
   // Permanent Auto-Save on state changes
   useEffect(() => {
@@ -619,100 +720,218 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     ]
   );
 
-  // Login
-  const login = useCallback((user: string, pass: string, targetRole: UserRole): boolean => {
-    const trimmedUser = user.trim().toLowerCase();
+  // Login (Supabase Auth for Owner when configured; local transition verifier only when unconfigured; Guest always local-only)
+  const login = useCallback(
+    async (user: string, pass: string, targetRole: UserRole): Promise<boolean> => {
+      setLastAuthError(null);
+      const trimmedUser = user.trim();
+      const lowerUser = trimmedUser.toLowerCase();
 
-    if (targetRole === 'owner') {
-      const ownerState = loadRoleStateSync('owner');
-      const storedOwnerUser = (ownerState.username || 'Steeven').trim().toLowerCase();
-      const storedOwnerPass = ownerState.passwordHash || 'Nani@011';
-      const isSteeven = trimmedUser === 'steeven' || trimmedUser === storedOwnerUser;
-      const isPassValid =
-        pass === storedOwnerPass || pass === 'Nani@011' || pass === 'Nani@0111';
-      if (isSteeven && isPassValid) {
-        ownerState.isAuthenticated = true;
-        setState(ownerState);
-        setSelectedDayNumberState(ownerState.lastActiveDayNumber || 1);
-        setSelectedDsaDayState(ownerState.dsaProgress?.lastActiveDayNumber || 1);
-        setSelectedAzureDayState(ownerState.azureProgress?.lastActiveDayNumber || 1);
+      if (targetRole === 'owner') {
+        if (isSupabaseConfigured && supabase) {
+          const email = trimmedUser.includes('@')
+            ? trimmedUser
+            : lowerUser === 'steeven' && configuredOwnerEmail
+            ? configuredOwnerEmail
+            : '';
 
-        // Also check IndexedDB asynchronously in case Owner has larger/newer state (e.g. PDFs > localStorage quota)
-        loadFromIndexedDB(OWNER_STORAGE_KEY).then(async dbOwner => {
-          if (
-            dbOwner &&
-            dbOwner.lastSavedTimestamp &&
-            (!ownerState.lastSavedTimestamp || dbOwner.lastSavedTimestamp > ownerState.lastSavedTimestamp)
-          ) {
-            const hydrated = hydrateUserState({ ...dbOwner, isAuthenticated: true }, 'owner');
-            await saveSharedContent(extractSharedContentFromOwner(hydrated));
-            setState(prev => (prev.role === 'owner' && prev.isAuthenticated ? hydrated : prev));
-          } else {
-            await saveSharedContent(extractSharedContentFromOwner(ownerState));
+          if (!email) {
+            setLastAuthError(
+              'Enter your Owner Supabase Auth email address (or configure VITE_OWNER_AUTH_EMAIL).'
+            );
+            return false;
           }
-        });
 
-        return true;
-      }
-      return false;
-    } else {
-      const isGuest = trimmedUser === 'guest';
-      const isPassValid = pass === 'Guest@0111';
-      if (isGuest && isPassValid) {
-        const guestState = loadRoleStateSync('guest');
-        guestState.isAuthenticated = true;
-        setState(guestState);
-        setSelectedDayNumberState(guestState.lastActiveDayNumber || 1);
-        setSelectedDsaDayState(guestState.dsaProgress?.lastActiveDayNumber || 1);
-        setSelectedAzureDayState(guestState.azureProgress?.lastActiveDayNumber || 1);
+          const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password: pass
+          });
 
-        // Ensure latest IndexedDB shared content & Guest sandbox progress are loaded asynchronously
-        Promise.all([loadFromIndexedDB(GUEST_STORAGE_KEY), loadSharedContentAsync()]).then(
-          ([dbGuest, latestShared]) => {
-            setState(prev => {
-              if (prev.role !== 'guest' || !prev.isAuthenticated) return prev;
-              const baseGuest =
-                dbGuest &&
-                dbGuest.lastSavedTimestamp &&
-                (!prev.lastSavedTimestamp || dbGuest.lastSavedTimestamp > prev.lastSavedTimestamp)
-                  ? hydrateUserState({ ...dbGuest, isAuthenticated: true }, 'guest')
-                  : prev;
-              return applySharedContentToGuestState(baseGuest, latestShared);
-            });
+          if (error || !data?.user || !data?.session) {
+            setLastAuthError('Invalid Owner Supabase Auth credentials or account not yet created.');
+            return false;
           }
+
+          if (configuredOwnerUserId && data.user.id !== configuredOwnerUserId) {
+            await supabase.auth.signOut();
+            setLastAuthError('This Supabase account is not authorized as the Owner.');
+            return false;
+          }
+
+          setIsOwnerSupabaseSessionActive(true);
+          hydrateAuthenticatedOwnerLocalState();
+          setCurrentPage('home_dashboard');
+          return true;
+        }
+
+        // Pre-Supabase local transition mode (strictly unavailable once Supabase Auth is configured)
+        const ownerState = loadRoleStateSync('owner');
+        const storedOwnerUser = (ownerState.username || 'Steeven').trim().toLowerCase();
+        const isSteeven = lowerUser === 'steeven' || lowerUser === storedOwnerUser;
+        if (!isSteeven) {
+          setLastAuthError('Invalid Owner username.');
+          return false;
+        }
+
+        const isPassValid = await verifyOwnerTransitionPassword(
+          pass,
+          ownerState.authVerifier,
+          ownerState.passwordHash
         );
+        if (!isPassValid) {
+          setLastAuthError('Invalid Owner credentials.');
+          return false;
+        }
 
+        // Migrate legacy stored password into non-plaintext verifier without altering any study progress
+        if (ownerState.passwordHash && !ownerState.authVerifier) {
+          ownerState.authVerifier = await computeOwnerTransitionVerifier(ownerState.passwordHash);
+        }
+        ownerState.passwordHash = '';
+        setIsOwnerSupabaseSessionActive(false);
+        hydrateAuthenticatedOwnerLocalState();
+        setCurrentPage('home_dashboard');
         return true;
+      } else {
+        // Guest is strictly local-only and never touches Supabase Auth or Owner storage
+        const isGuest = lowerUser === 'guest';
+        const isPassValid = await verifyGuestLocalPassword(pass);
+        if (isGuest && isPassValid) {
+          const guestState = loadRoleStateSync('guest');
+          guestState.isAuthenticated = true;
+          guestState.passwordHash = '';
+          setIsOwnerSupabaseSessionActive(false);
+          setState(guestState);
+          setSelectedDayNumberState(guestState.lastActiveDayNumber || 1);
+          setSelectedDsaDayState(guestState.dsaProgress?.lastActiveDayNumber || 1);
+          setSelectedAzureDayState(guestState.azureProgress?.lastActiveDayNumber || 1);
+
+          Promise.all([loadFromIndexedDB(GUEST_STORAGE_KEY), loadSharedContentAsync()]).then(
+            ([dbGuest, latestShared]) => {
+              setState(prev => {
+                if (prev.role !== 'guest' || !prev.isAuthenticated) return prev;
+                const baseGuest =
+                  dbGuest &&
+                  dbGuest.lastSavedTimestamp &&
+                  (!prev.lastSavedTimestamp || dbGuest.lastSavedTimestamp > prev.lastSavedTimestamp)
+                    ? hydrateUserState({ ...dbGuest, passwordHash: '', isAuthenticated: true }, 'guest')
+                    : prev;
+                return applySharedContentToGuestState(baseGuest, latestShared);
+              });
+            }
+          );
+
+          setCurrentPage('home_dashboard');
+          return true;
+        }
+        setLastAuthError('Invalid Guest preview credentials.');
+        return false;
       }
-      return false;
-    }
-  }, []);
+    },
+    [hydrateAuthenticatedOwnerLocalState]
+  );
 
   const logout = useCallback(() => {
     setTestModeEnabled(false);
     setTestModeDate(null);
+    setLastAuthError(null);
+    setIsOwnerSupabaseSessionActive(false);
+
     setState(prev => {
-      const loggedOut = {
-        ...prev,
-        isAuthenticated: false,
-        timerState: { ...prev.timerState, isActive: false, isPaused: false }
+      if (prev.isAuthenticated) {
+        const pausedSnapshot = {
+          ...prev,
+          isAuthenticated: false,
+          passwordHash: '',
+          timerState: { ...prev.timerState, isActive: false, isPaused: false }
+        };
+        void saveRoleStatePermanent(pausedSnapshot);
+      }
+      return {
+        ...DEFAULT_GUEST_STATE,
+        isAuthenticated: false
       };
-      saveRoleStatePermanent(loggedOut);
-      return loggedOut;
     });
+
+    if (isSupabaseConfigured && supabase) {
+      void supabase.auth.signOut();
+    }
     setCurrentPage('login');
   }, []);
 
   const updateCredentials = useCallback(
-    (newUsername: string, newPassword: string) => {
-      if (state.role !== 'owner') return;
+    async (
+      newUsername: string,
+      newPassword?: string
+    ): Promise<{ success: boolean; message: string }> => {
+      if (state.role !== 'owner') {
+        return { success: false, message: 'Guest mode cannot modify Owner credentials.' };
+      }
+
+      const trimmedName = newUsername.trim() || state.username || 'Steeven';
+
+      if (isSupabaseConfigured && supabase) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (!sessionData?.session) {
+          return {
+            success: false,
+            message: 'Active Supabase Auth session required to update Owner password.'
+          };
+        }
+
+        if (newPassword && newPassword.trim().length > 0) {
+          if (newPassword.length < 8) {
+            return {
+              success: false,
+              message: 'Supabase Auth passwords must be at least 8 characters long.'
+            };
+          }
+          const { error } = await supabase.auth.updateUser({
+            password: newPassword,
+            data: { display_name: trimmedName }
+          });
+          if (error) {
+            return { success: false, message: error.message };
+          }
+        } else {
+          await supabase.auth.updateUser({ data: { display_name: trimmedName } });
+        }
+
+        setState(prev => ({
+          ...prev,
+          username: trimmedName,
+          passwordHash: ''
+        }));
+
+        return {
+          success: true,
+          message: newPassword
+            ? 'Owner password and profile updated in Supabase Auth.'
+            : 'Owner display username updated.'
+        };
+      }
+
+      // Local pre-Supabase transition mode: update display name and one-way SHA-256 verifier only (never plaintext)
+      let nextVerifier = state.authVerifier;
+      if (newPassword && newPassword.trim().length > 0) {
+        nextVerifier = await computeOwnerTransitionVerifier(newPassword);
+      }
+
       setState(prev => ({
         ...prev,
-        username: newUsername.trim(),
-        passwordHash: newPassword
+        username: trimmedName,
+        passwordHash: '',
+        authVerifier: nextVerifier
       }));
+
+      return {
+        success: true,
+        message: newPassword
+          ? 'Local transition verifier updated (Supabase Auth not yet configured).'
+          : 'Display username updated.'
+      };
     },
-    [state.role]
+    [state.role, state.username, state.authVerifier]
   );
 
   // Main Plan Toggle task completion (guarded by strict real IST clock)
@@ -1677,6 +1896,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       selectedAzureDay,
       setSelectedAzureDay,
       openDayForTrack,
+      aiResourcesTarget,
+      openDailyAiResources,
+      toggleDailyAiResourceCompletion,
       saveStatus,
       nowTimestamp,
       isPreparationLocked,
@@ -1694,6 +1916,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       login,
       logout,
       updateCredentials,
+      isSupabaseAuthConfigured: isSupabaseConfigured,
+      isOwnerSupabaseSessionActive,
+      lastAuthError,
       toggleTaskCompletion,
       saveDayNotes,
       submitAssessment,
@@ -1748,6 +1973,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       selectedAzureDay,
       setSelectedAzureDay,
       openDayForTrack,
+      aiResourcesTarget,
+      openDailyAiResources,
+      toggleDailyAiResourceCompletion,
       saveStatus,
       nowTimestamp,
       isPreparationLocked,
@@ -1765,6 +1993,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       login,
       logout,
       updateCredentials,
+      isOwnerSupabaseSessionActive,
+      lastAuthError,
       toggleTaskCompletion,
       saveDayNotes,
       submitAssessment,

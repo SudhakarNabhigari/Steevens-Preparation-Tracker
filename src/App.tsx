@@ -17,6 +17,7 @@ import { SmartTimerModal } from './components/SmartTimerModal';
 import { ResourceLibraryPage } from './components/ResourceLibraryPage';
 import { DoubtNotebookPage } from './components/DoubtNotebookPage';
 import { PreparationCalendarPage } from './components/PreparationCalendarPage';
+import { DailyAiResourcesPage } from './components/DailyAiResourcesPage';
 
 const AppContent: React.FC = () => {
   const { state, currentPage } = useApp();
@@ -45,6 +46,8 @@ const AppContent: React.FC = () => {
         return <WeeklyAssessmentsPage />;
       case 'weekly_progress':
         return <WeeklyProgressPage />;
+      case 'daily_ai_resources':
+        return <DailyAiResourcesPage />;
       case 'resource_library':
         return <ResourceLibraryPage />;
       case 'doubt_notebook':

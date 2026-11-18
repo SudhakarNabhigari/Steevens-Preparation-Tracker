@@ -39,7 +39,16 @@ export async function migrateLegacyRoadmapPdfs(
   userId: string,
   records: RoadmapPdfRecord[]
 ): Promise<RoadmapPdfRecord[]> {
+  if (!isSupabaseConfigured) {
+    return records;
+  }
+
   const supabase = requireSupabaseClient();
+  const { data: sessionData, error: sessionErr } = await supabase.auth.getSession();
+  if (sessionErr || !sessionData?.session || sessionData.session.user?.id !== userId) {
+    throw new Error('Authenticated Supabase Owner session required before migrating PDFs to Storage.');
+  }
+
   const migrated: RoadmapPdfRecord[] = [];
 
   for (const pdf of records) {
@@ -57,16 +66,27 @@ export async function migrateLegacyRoadmapPdfs(
     }
 
     const blob = await response.blob();
+    const headerSlice = new Uint8Array(await blob.slice(0, 16).arrayBuffer());
+    const hasMagic =
+      headerSlice.length >= 5 &&
+      headerSlice[0] === 0x25 &&
+      headerSlice[1] === 0x50 &&
+      headerSlice[2] === 0x44 &&
+      headerSlice[3] === 0x46 &&
+      headerSlice[4] === 0x2d;
+
+    if (!hasMagic) {
+      throw new Error(`Invalid PDF payload in legacy record: ${pdf.filename}`);
+    }
+
     const file = new File([blob], pdf.filename, {
-      type: 'application/pdf',
+      type: 'application/pdf'
     });
 
-    const { error } = await supabase.storage
-      .from(BUCKET)
-      .upload(storagePath, file, {
-        contentType: 'application/pdf',
-        upsert: true,
-      });
+    const { error } = await supabase.storage.from(BUCKET).upload(storagePath, file, {
+      contentType: 'application/pdf',
+      upsert: true
+    });
 
     if (error) throw error;
 
@@ -74,7 +94,7 @@ export async function migrateLegacyRoadmapPdfs(
       ...pdf,
       ownerId: userId,
       storagePath,
-      fileUrl: '',
+      fileUrl: ''
     });
   }
 

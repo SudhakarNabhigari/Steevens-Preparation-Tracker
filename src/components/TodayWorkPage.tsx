@@ -16,7 +16,8 @@ import {
   Save,
   FileText,
   Lock,
-  ShieldCheck
+  ShieldCheck,
+  Sparkles
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -34,7 +35,8 @@ export const TodayWorkPage: React.FC = () => {
     saveDayNotes,
     startTimer,
     activeTimer,
-    userRole
+    userRole,
+    openDailyAiResources
   } = useApp();
 
   const day = ALL_180_DAYS[selectedDayNumber - 1] || ALL_180_DAYS[0];
@@ -117,15 +119,25 @@ export const TodayWorkPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick jump to Current Day if viewing another day */}
-        {!isCurrentDay && (
+        <div className="flex items-center gap-3 flex-wrap">
           <button
-            onClick={() => setSelectedDayNumber(currentDayNumber)}
-            className="text-xs text-[#E7826D] hover:text-[#D66F5A] hover:underline flex items-center gap-1 cursor-pointer font-semibold"
+            onClick={() => openDailyAiResources('main', day.dayNumber)}
+            className="px-3 py-1.5 rounded-lg bg-[#292929] hover:bg-[#3D3D3D] text-[#F3EFE6] text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
           >
-            <span>Jump to Current (Day {currentDayNumber})</span>
+            <Sparkles className="w-3.5 h-3.5 text-[#E7826D]" />
+            <span>Day {day.dayNumber} AI Resources</span>
           </button>
-        )}
+
+          {/* Quick jump to Current Day if viewing another day */}
+          {!isCurrentDay && (
+            <button
+              onClick={() => setSelectedDayNumber(currentDayNumber)}
+              className="text-xs text-[#E7826D] hover:text-[#D66F5A] hover:underline flex items-center gap-1 cursor-pointer font-semibold"
+            >
+              <span>Jump to Current (Day {currentDayNumber})</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Day Header Summary Card */}

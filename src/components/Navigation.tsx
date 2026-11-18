@@ -22,7 +22,8 @@ import {
   Library,
   AlertTriangle,
   Code2,
-  Cloud
+  Cloud,
+  Sparkles
 } from 'lucide-react';
 
 export const Navigation: React.FC = () => {
@@ -52,6 +53,7 @@ export const Navigation: React.FC = () => {
     { id: 'all_days', label: '180 Days List', icon: CalendarDays },
     { id: 'weekly_assessments', label: 'Assessments', icon: Award },
     { id: 'weekly_progress', label: 'Weekly Progress', icon: TrendingUp },
+    { id: 'daily_ai_resources', label: 'AI Resources', icon: Sparkles },
     { id: 'resource_library', label: 'Resource Library', icon: Library },
     { id: 'doubt_notebook', label: 'Doubt Notebook', icon: AlertTriangle },
     { id: 'roadmap_pdf', label: 'Roadmap PDF', icon: FileUp },

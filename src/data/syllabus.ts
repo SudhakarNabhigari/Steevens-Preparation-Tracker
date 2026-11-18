@@ -1,4 +1,4 @@
-import { DaySchedule } from '../types';
+import type { DaySchedule } from '../types';
 
 export const START_DATE_IST = '2026-11-16T00:00:00+05:30';
 export const END_DATE_IST = '2027-05-14T23:59:59+05:30';

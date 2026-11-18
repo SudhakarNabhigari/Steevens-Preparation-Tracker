@@ -1,0 +1,864 @@
+MASTER EXECUTION PROMPT
+STEEVEN'S 180-DAY PREPARATION TRACKER
+Complete 8-Stage Implementation, Integration, Automation, Email & Production Readiness
+You are acting as a Senior Full-Stack Engineer, AI Engineer, Supabase Architect, Security Engineer, Email Designer, QA Engineer and DevOps Engineer.
+Your responsibility is to inspect, complete, test and prepare the existing STEEVEN'S 180-DAY PREPARATION TRACKER for reliable production use.
+This is an existing application. Do not rebuild it from scratch.
+Your first priority is to understand the existing source code, preserve all working features and user data, and then complete the missing integrations.
+Execute the following eight stages in order. Do not skip stages or claim success without evidence.
+PART 1 — PROJECT OBJECTIVE
+The application is a personal preparation and learning platform with three independent preparation tracks:
+Main Plan — 180 Days
+DSA in C++ — 100 Days
+Azure Alternate — 100 Days
+The application should provide:
+Daily preparation schedules.
+Daily AI-generated learning resources.
+Relevant YouTube learning videos.
+Daily AI learning briefs.
+Progress tracking.
+Weekly assessments.
+Daily email reports.
+Secure scheduled automation.
+Owner and Guest access.
+Production deployment readiness.
+The final experience should be reliable, attractive, responsive and secure.
+PART 2 — EXISTING APPLICATION MUST BE PRESERVED
+Before changing code, inspect the entire existing application.
+Identify:
+Frontend architecture.
+Backend architecture.
+Authentication flow.
+Existing preparation tracks.
+Syllabus and roadmap files.
+Existing database and local storage usage.
+Progress tracking.
+Weekly assessment system.
+PDF handling.
+Existing settings and dashboard.
+Current deployment architecture.
+Existing API integrations.
+Do not remove or replace existing working features.
+Existing preparation schedules
+Main Plan
+Duration: 180 days.
+Start date: November 16, 2026.
+End date: May 14, 2027.
+Monday–Friday: 4 hours per day.
+Saturday: 3 hours preparation plus 3 hours examination.
+Sunday: 3 hours preparation.
+Use only the topics from the original provided roadmap PDF.
+Do not omit any syllabus content.
+Do not introduce unrelated external syllabus topics.
+DSA in C++
+Duration: 100 days.
+Monday–Friday: 90 minutes daily.
+Saturday and Sunday: 2 hours revision.
+Preserve the existing day-wise topic distribution.
+Azure Alternate
+Duration: 100 days.
+Monday–Friday: 1 hour daily.
+Saturday and Sunday: revision.
+Preserve the existing day-wise topic distribution.
+The application must retain independent progress for all three tracks.
+Existing features to preserve
+Owner login.
+Guest login.
+Dashboard.
+Three-track selection.
+Daily task list.
+Preparation calendar.
+Study timers.
+Study-hour tracking.
+Topic completion.
+Weekly assessments.
+Coding questions.
+Roadmap PDF.
+Resource Library.
+Doubt and Error Notebook.
+Progress tracking.
+Profile and Settings.
+Existing design system.
+Existing local progress and saved records.
+Never reset or delete existing preparation progress.
+Do not overwrite localStorage, IndexedDB or existing roadmap PDF records during cloud integration.
+PART 3 — AUTHENTICATION AND SECURITY
+Owner
+Username: Steeven.
+Owner authentication uses Supabase Auth.
+The intended Owner email is configured in the existing environment.
+Verify JWT tokens on protected backend endpoints.
+Enforce the configured Owner UUID on the server.
+Do not trust client-provided role values.
+Prevent unauthorized access to Owner data.
+Guest
+Guest username: Guest.
+Guest remains local-only.
+No Supabase Auth account is required.
+Guest must not read or write Owner cloud records.
+Guest progress must not overwrite Owner progress.
+Security requirements
+Verify all protected API requests.
+Validate JWT signatures and claims.
+Enforce Owner UUID server-side.
+Enable and verify RLS.
+Prevent cross-user access.
+Protect service credentials.
+Never expose backend secrets to the browser.
+Validate all external URLs before rendering or processing them.
+Do not log passwords, API keys, JWTs or secret values.
+Important: Existing RLS policies using auth.uid() = user_id must not automatically be described as strict single-Owner-only access. Verify the actual policy and enforce the intended Owner restriction.
+PART 4 — EIGHT EXECUTION STAGES
+STAGE 1 — COMPLETE ENVIRONMENT AND SECURITY AUDIT
+Audit all configured environment variables.
+Expected names include:
+YOUTUBE_API_KEY
+RESEND_API_KEY
+RESEND_FROM_EMAIL
+DAILY_REPORT_RECIPIENT_EMAIL
+SUPABASE_URL
+SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+CRON_SECRET
+Also inspect existing variables:
+VITE_SUPABASE_URL
+VITE_SUPABASE_ANON_KEY
+VITE_OWNER_AUTH_EMAIL
+VITE_OWNER_USER_ID
+OWNER_SUPABASE_USER_ID
+GEMINI_API_KEY
+Requirements:
+Identify every environment variable used in the source code.
+Identify missing and duplicated names.
+Map each variable to the correct runtime.
+Separate frontend-safe values from backend-only credentials.
+Verify the compatibility of the currently configured Supabase key formats.
+Do not assume a new sb_secret key is interchangeable with an older service_role JWT.
+Verify Gemini API availability.
+Verify YouTube Data API configuration.
+Verify Resend API configuration.
+Verify the sender email and recipient email.
+Verify CRON_SECRET is sufficiently random.
+Never print actual secret values.
+Do not expose the Supabase service credential in frontend bundles.
+If a key format is incompatible, implement a secure compatible approach rather than silently misusing it.
+Do not generate fake credentials or invent missing values.
+STAGE 2 — LIVE SUPABASE INTEGRATION
+The following database tables have already been created:
+daily_learning_resources
+daily_learning_briefs
+daily_automation_runs
+Verify their actual schema before changing anything.
+Requirements:
+Live Supabase connectivity.
+Owner JWT authentication.
+Owner UUID enforcement.
+Secure database reads.
+Secure database writes.
+Correct RLS policies.
+Guest local-only isolation.
+Cross-user access prevention.
+Correct track and day association.
+Duplicate prevention.
+Reliable upsert operations.
+Proper error handling.
+Correct timestamps and timezone handling.
+Test all three tracks:
+Main Plan.
+DSA C++.
+Azure.
+Use actual database operations to verify the integration.
+Do not confuse mocked tests with live database tests.
+No destructive SQL operations.
+STAGE 3 — DAILY AI LEARNING RESOURCES ENGINE
+Build a reliable AI learning resource generation engine.
+For every preparation day:
+Read the actual syllabus topic for that day.
+Identify the selected track.
+Generate relevant learning material.
+Generate beginner-friendly explanations.
+Provide important concepts.
+Include practical examples.
+Include exercises or practice suggestions.
+Generate revision notes.
+Include relevant learning links.
+Save the resources to Supabase.
+Retrieve saved resources when the user revisits the day.
+Main Plan
+Use only the actual topics from the existing roadmap PDF.
+DSA
+Prioritize:
+Concept explanations.
+Algorithm walkthroughs.
+C++ examples.
+Complexity analysis where relevant.
+Coding exercises.
+Problem-solving practice.
+Azure
+Prioritize:
+Azure service explanations.
+Architecture concepts.
+Practical use cases.
+Relevant Azure documentation.
+Hands-on learning suggestions.
+Never generate resources for a different day or unrelated topic.
+Do not modify the original syllabus.
+Avoid unnecessary regeneration when valid resources already exist.
+STAGE 4 — YOUTUBE LEARNING ENGINE
+Use the configured YouTube Data API key.
+Generate relevant educational video recommendations for each day's actual topics.
+Display:
+Video title.
+Channel name.
+Thumbnail.
+Video URL.
+Duration, where available.
+Topic relevance.
+Track and day association.
+Requirements:
+Search by actual daily topic.
+Avoid unrelated videos.
+Filter duplicate videos.
+Validate video URLs.
+Handle unavailable or deleted videos.
+Handle quota limits.
+Cache valid results.
+Do not repeatedly consume quota for the same day.
+Provide a graceful fallback when the API is unavailable.
+Never fabricate YouTube links.
+STAGE 5 — DAILY AI BRIEFS
+Generate a Daily AI Brief for each preparation day and track.
+Include:
+Day number.
+Date.
+Selected track.
+Today's syllabus.
+Learning summary.
+Important concepts.
+Key takeaways.
+Practical suggestions.
+Revision reminders.
+Related resources.
+Upcoming preparation tasks.
+Store briefs in Supabase.
+Allow users to revisit historical briefs.
+Prevent duplicate brief generation.
+Keep each track independent.
+STAGE 6 — PREMIUM DAILY EMAIL REPORTING SYSTEM
+THIS IS A CRITICAL FEATURE.
+Build a premium, highly attractive, clean, modern and professional HTML email template.
+The email must look like a professionally designed daily study planner, not a plain text notification.
+The design must be:
+Clean.
+Neat.
+Modern.
+Visually attractive.
+Mobile responsive.
+Easy to read.
+Professionally structured.
+Consistent with the application's Warm Ivory, Electric Black and Terracotta design system.
+Rich in meaningful emojis without excessive decoration.
+Use inline CSS for reliable email-client rendering.
+Use proper spacing, section dividers, typography, cards and buttons.
+Do not depend on JavaScript inside the email.
+EMAIL SUBJECT
+Use a dynamic subject such as:
+🚀 Steeven, Your Day {DAY_NUMBER} Preparation Plan Is Ready!
+The day number and date must be calculated from the actual selected preparation schedule.
+EMAIL MAIN HEADING
+The email must prominently display:
+"Steeven, Today You Have This Work! 🚀"
+This exact phrase must be included.
+EMAIL CONTENT STRUCTURE
+1. Header
+Display:
+STEEVEN'S 180-DAY PREPARATION TRACKER.
+Date.
+Current preparation day.
+Selected preparation track.
+A clean professional branded header.
+2. Today's preparation identity
+Prominently display:
+DAY {DAY_NUMBER}
+For example:
+DAY 1 — MAIN PLAN
+17 November 2026
+The displayed date and day must come from the actual schedule, not from arbitrary generation.
+3. Today's work
+Display the exact section heading:
+"Steeven, Today You Have This Work! 🚀"
+Below this heading, list the actual tasks scheduled for that day.
+For each task show:
+Topic name.
+Subtopic.
+Expected duration.
+Learning priority.
+What to study.
+Expected outcome.
+Relevant learning resources.
+Do not include tomorrow's topics or other unrelated day topics.
+4. Daily study timetable
+Display the actual study schedule for that day.
+For example, where applicable:
+Study Session 1.
+Study Session 2.
+Study Session 3.
+Breaks.
+Revision.
+Practice.
+Weekly examination where scheduled.
+Use the actual existing timetable.
+Never invent study timings if they are not present in the source schedule.
+5. AI learning resources
+For each of today's topics, include:
+Short explanation.
+Important concepts.
+Practical examples.
+Learning notes.
+Exercises.
+Revision suggestions.
+Provide attractive, clearly labeled resource links.
+6. YouTube recommendations
+For each relevant topic include:
+Video thumbnail.
+Video title.
+Channel name.
+Duration if available.
+A clear "Watch Video" link.
+Only show validated and relevant video URLs.
+Use readable link styling and accessible buttons.
+7. Today's important takeaways
+Include:
+Most important concepts.
+Things to remember.
+Practice suggestions.
+Common mistakes where relevant.
+8. Today's completion checklist
+Display the day's actual tasks with clear checkbox-like visual indicators.
+Do not falsely mark tasks as completed.
+The email should show the current actual progress if available.
+9. Motivation section
+Include a short, natural motivational message.
+Examples:
+"One focused day at a time. Your consistency builds your future. 💪"
+"Stay disciplined, Steeven. Today's effort is tomorrow's confidence. 🚀"
+Avoid repetitive or overly dramatic motivational text.
+10. Dashboard action
+Provide a prominent button:
+"Open My Preparation Dashboard"
+Use the real deployed application URL from verified configuration.
+Never invent a production URL.
+11. Footer
+Display:
+STEEVEN'S 180-DAY PREPARATION TRACKER.
+Daily learning reminder.
+Correct timezone: Asia/Kolkata.
+Appropriate footer styling.
+STRICT DAY-WISE EMAIL RULE
+This requirement is mandatory.
+The email must represent exactly the day that is scheduled for that date and selected track.
+Examples:
+Day 1 email contains only Day 1 work.
+Day 2 email contains only Day 2 work.
+Day 3 email contains only Day 3 work.
+Never send Day 2 tasks in a Day 1 email.
+Never combine multiple days unless the schedule explicitly defines a weekly examination or revision activity.
+Multi-track behavior
+The application supports three independent tracks.
+The email generator must know which track is active and which day applies.
+Do not mix Main Plan, DSA and Azure topics into one email unless the user explicitly requests a combined report.
+If a daily report for multiple tracks is intentionally enabled, separate the tracks into clearly labeled sections and use the correct day number for each track.
+Date and timezone handling
+Use Asia/Kolkata.
+Calculate the date and day mapping from the stored schedule.
+Do not rely on UTC date alone.
+Do not assume every track has the same day number.
+If the current date does not map to an active preparation day, do not invent a day or send a misleading report.
+EMAIL QUALITY ACCEPTANCE CRITERIA
+The email is not complete until:
+It displays the exact day number.
+It displays the correct date.
+It displays the correct track.
+It contains only that day's actual work.
+It contains the exact heading "Steeven, Today You Have This Work! 🚀".
+It includes the day's learning resources.
+It includes relevant YouTube links.
+It contains a clear timetable.
+It contains a completion checklist.
+It contains a dashboard link.
+It renders correctly on mobile.
+It renders correctly in Gmail.
+It uses clean spacing and attractive visual hierarchy.
+It contains no broken or fabricated links.
+It does not falsely report task completion.
+Create sample preview emails for Day 1 and Day 2.
+Verify that Day 1 and Day 2 content are different and correspond to the correct source syllabus.
+Do not send these preview emails to the real recipient without explicit approval.
+STAGE 7 — SECURE DAILY AUTOMATION
+Build the complete daily automation pipeline.
+Expected schedule:
+Every day at 10:00 AM IST.
+Use timezone Asia/Kolkata.
+Automation sequence:
+Trigger scheduled execution.
+Validate CRON_SECRET.
+Identify current date.
+Identify the applicable preparation track and day.
+Retrieve the exact day's syllabus.
+Check whether resources already exist.
+Generate missing AI resources.
+Retrieve relevant YouTube videos.
+Generate Daily Brief.
+Save resources and briefs to Supabase.
+Generate the daily email.
+Send the email only when authorized and configuration is verified.
+Record the execution status.
+Record failures with safe diagnostic information.
+Prevent duplicate runs and duplicate emails.
+Automation requirements
+Secure Edge Function.
+Secure backend authentication.
+Supabase Vault for secrets where appropriate.
+pg_cron and pg_net only if supported and configured correctly.
+Idempotent automation runs.
+Safe retries.
+Failure handling.
+Execution logs.
+Duplicate email prevention.
+Correct timezone.
+No missing-day generation.
+No unauthorized triggers.
+Do not activate production cron before all integration tests pass and the user approves activation.
+STAGE 8 — PRODUCTION DEPLOYMENT AND FINAL QA
+Target application:
+https://my-preparation.vercel.app
+Inspect the actual current deployment configuration before making changes.
+Requirements:
+Vercel frontend configuration.
+Backend serverless compatibility.
+Production environment variables.
+Supabase connectivity.
+Edge Function deployment.
+Secure cron setup.
+Health checks.
+API error handling.
+Logging without secrets.
+Mobile responsiveness.
+Performance checks.
+Authentication security.
+Data isolation.
+Database reliability.
+Do not assume AI Studio Secrets automatically transfer to Vercel.
+Production environment variables must be configured in the correct deployment environment.
+Do not deploy without explicit user approval.
+PART 5 — DESIGN REQUIREMENTS
+Preserve the existing three-color design system:
+Warm Ivory: #F3EFE6
+Electric Black: #292929
+Terracotta: #E7826D
+Maintain:
+Clean UI.
+Responsive layouts.
+Consistent cards.
+Clear navigation.
+Attractive dashboard.
+Good typography.
+Accessible controls.
+Professional presentation.
+New AI features must fit naturally into the existing application.
+Do not redesign unrelated pages unnecessarily.
+PART 6 — TESTING AND ACCEPTANCE
+Run all applicable tests.
+Authentication
+Owner login.
+Owner session persistence.
+Owner logout and re-login.
+Guest login.
+Guest local-only behavior.
+Unauthorized request rejection.
+Cross-user access rejection.
+Preparation
+Main Plan day mapping.
+DSA day mapping.
+Azure day mapping.
+Existing progress preservation.
+Weekly examination schedule.
+PDF access.
+Local data persistence.
+AI Resources
+Correct day-wise generation.
+Correct topic selection.
+Track-specific output.
+Database save and retrieval.
+Duplicate prevention.
+Error handling.
+YouTube
+Valid API requests.
+Relevant videos.
+Valid links.
+Quota handling.
+Duplicate filtering.
+Email
+Correct recipient.
+Correct sender.
+Correct day number.
+Correct date.
+Correct preparation track.
+Correct tasks.
+Correct resource links.
+Attractive HTML rendering.
+Gmail/mobile preview.
+No duplicate email delivery.
+Automation
+Valid cron authorization.
+Invalid secret rejection.
+Correct 10 AM IST scheduling.
+Idempotent runs.
+Safe retries.
+Execution records.
+Production
+Build success.
+TypeScript success.
+Automated tests.
+API health.
+Deployment configuration.
+No critical runtime errors.
+No security vulnerabilities.
+Separate actual live test results from mocked or simulated test results.
+Never report a test as successful unless it was actually executed and verified.
+PART 7 — NON-NEGOTIABLE SAFETY AND CHANGE CONTROL
+Never delete existing user progress.
+Never reset localStorage or IndexedDB.
+Never overwrite existing roadmap PDFs.
+Never modify the original syllabus without permission.
+Never trust client-side role claims.
+Never expose backend secrets in frontend code.
+Never log API keys or tokens.
+Never run destructive SQL migrations.
+Never send real emails without approval.
+Never activate production cron without approval.
+Never deploy to Vercel without approval.
+Never push to GitHub without approval.
+Never invent API credentials.
+Never claim mocked tests are live tests.
+Preserve the existing application architecture wherever possible.
+Before any potentially destructive operation, stop and request approval.
+PART 8 — EXECUTION METHOD
+Follow these eight stages sequentially.
+For every stage:
+Inspect existing code.
+Identify missing requirements.
+Prepare an implementation plan.
+Implement only necessary changes.
+Run TypeScript checks.
+Run production build.
+Run relevant automated tests.
+Run live integration tests where credentials and network access are available.
+Verify existing features remain functional.
+Report exact results.
+Do not stop after writing an implementation plan if the environment allows implementation.
+Do not silently skip blocked tasks.
+If a task requires a manual dashboard action, clearly explain the exact action and wait for the user's approval.
+Do not pretend to have deployed or configured an external service when you have not.
+PART 9 — FINAL REPORT
+At the end, provide:
+Eight-stage completion summary.
+Files created and modified.
+Database changes.
+Authentication and security findings.
+Environment variable mapping.
+Live tests passed.
+Simulated tests passed.
+Tests failed.
+Remaining manual configuration.
+Email preview verification.
+Automation verification.
+Deployment readiness.
+Data preservation verification.
+Exact next action.
+Use these final statuses:
+COMPLETE — verified successfully.
+PARTIALLY COMPLETE — implementation exists but verification is incomplete.
+BLOCKED — requires manual action or unavailable credentials.
+FAILED — an actual test or implementation failed.
+The project may only be declared production-ready when every mandatory acceptance criterion has passed.
+FINAL OBJECTIVE
+Deliver a secure, reliable, beautiful and fully functional STEEVEN'S 180-DAY PREPARATION TRACKER.
+The system must preserve all existing preparation data, support Main Plan, DSA and Azure independently, generate accurate day-wise AI learning resources, provide relevant YouTube videos, create premium daily email reports with the exact heading:
+"Steeven, Today You Have This Work! 🚀"
+and run the approved daily automation at 10:00 AM IST.
+Complete the eight stages systematically, with no skipped requirements, no fabricated success claims and no unauthorized external actions.
+MANDATORY MASTER PROMPT UPDATE
+ALL THREE TRACKS — MAIN PLAN + DSA C++ + AZURE
+IMPORTANT: This update extends and overrides any previous instructions that might have focused mainly on the Main Plan.
+The application must provide complete daily AI learning resources, YouTube recommendations and premium daily email reports for ALL THREE preparation tracks.
+No track should be treated as secondary.
+1. MAIN PLAN — 180 DAYS
+For every active Main Plan day, generate:
+Exact day number and date.
+Actual syllabus topics from the original roadmap PDF.
+Beginner-friendly explanations.
+Important concepts and notes.
+Practical examples.
+Relevant learning material links.
+Topic-specific YouTube video recommendations.
+Video titles, channel names, thumbnails and validated URLs.
+Daily timetable based on the existing schedule.
+Exercises and revision tasks.
+Daily AI Brief.
+Daily completion checklist.
+STRICT RULE:
+Use only the original Main Plan syllabus topics. Never omit, replace or invent syllabus topics.
+2. DSA IN C++ — 100 DAYS
+DSA must receive the same level of daily AI support as the Main Plan.
+For EVERY DSA preparation day, generate:
+A. Daily DSA Learning Material
+Correct DSA day number and date.
+Exact topics and subtopics from the existing DSA 100-day schedule.
+Beginner-friendly concept explanations.
+C++ code examples.
+Step-by-step algorithm explanations.
+Time and space complexity where relevant.
+Practical examples.
+Important interview concepts.
+Common mistakes.
+Revision notes.
+Practice suggestions.
+Do not change the existing DSA syllabus or day-wise topic distribution.
+B. Daily DSA YouTube Recommendations
+For every day's actual DSA topic, provide relevant educational YouTube videos.
+Display:
+Video title.
+Channel name.
+Thumbnail.
+Duration, if available.
+Validated YouTube URL.
+Clear Watch Video link.
+Choose videos that directly explain the day's DSA topic.
+Prioritize quality, clear explanations and C++ implementations.
+Do not return unrelated videos or fabricate URLs.
+Cache valid video results to avoid unnecessary YouTube API quota consumption.
+C. Mandatory Daily LeetCode Problems
+THIS IS A NON-NEGOTIABLE REQUIREMENT.
+For EVERY DSA preparation day, provide exactly THREE LeetCode problem recommendations:
+Difficulty	Required problems per day
+Easy	1
+Medium	1
+Hard	1
+Total	3
+For each problem, display:
+Problem title.
+Difficulty.
+Direct LeetCode problem URL.
+Problem number, if available.
+Short problem description.
+Why it is relevant to today's topic.
+Recommended approach or concept to practice.
+Completion status, if available from the user's actual progress.
+Use real, verified LeetCode problem links.
+Do not invent problem titles, problem numbers or URLs.
+Topic relevance
+The three LeetCode problems must be connected to the actual DSA topics scheduled for that day.
+For example, if the day's topic is Arrays:
+Easy: An appropriate Arrays problem.
+Medium: An appropriate Arrays problem.
+Hard: An appropriate Arrays problem.
+If the day's topic is Binary Trees, select problems relevant to Binary Trees.
+Do not randomly select unrelated problems just to fill the three difficulty slots.
+Avoid repeating the same problem unnecessarily across different days.
+Maintain a problem history and prevent duplicates wherever possible.
+If a relevant problem cannot be verified at a particular difficulty, clearly report that slot as unavailable. Never fabricate a replacement.
+DSA revision days
+Saturday and Sunday are revision days according to the existing schedule.
+Preserve the actual revision schedule and generate appropriate revision material and practice problems without changing the 100-day plan.
+3. AZURE ALTERNATE — 100 DAYS
+Azure must also receive complete daily learning support.
+For EVERY Azure preparation day, generate:
+A. Daily Azure Learning Material
+Correct Azure day number and date.
+Exact topic and subtopics from the existing Azure schedule.
+Beginner-friendly explanations.
+Azure service descriptions.
+Architecture concepts where relevant.
+Real-world use cases.
+Practical examples.
+Hands-on learning suggestions.
+Important interview concepts.
+Revision notes.
+Key takeaways.
+Do not change the existing Azure syllabus or day-wise topic distribution.
+B. Official Azure Learning Material Links
+For every day's topics, provide relevant learning material links.
+Prioritize:
+Microsoft Learn documentation.
+Official Azure documentation.
+Relevant Microsoft training modules.
+Official practical tutorials and hands-on labs.
+Display:
+Resource title.
+Resource type.
+Short description.
+Why it is relevant to today's topic.
+Direct verified URL.
+Do not fabricate Microsoft Learn URLs or claim that an unverified page is official.
+C. Daily Azure YouTube Recommendations
+For every day's actual Azure topic, provide relevant YouTube videos.
+Display:
+Video title.
+Channel name.
+Thumbnail.
+Duration, if available.
+Validated YouTube URL.
+Clear Watch Video link.
+Prioritize Microsoft and trusted technical educators where appropriate.
+Avoid irrelevant videos and duplicates.
+Cache valid video results and handle API quota limits.
+D. Azure Revision
+Preserve the existing Saturday and Sunday revision schedule.
+Provide relevant revision notes, documentation links and practice suggestions.
+4. UNIFIED DAILY EMAIL SYSTEM — ALL THREE TRACKS
+The premium daily email system must support all three preparation tracks.
+The exact email heading remains:
+"Steeven, Today You Have This Work! 🚀"
+The email must clearly identify the selected track.
+Main Plan email
+Include:
+Actual Main Plan day and date.
+Today's syllabus.
+Daily timetable.
+Learning explanations.
+Learning material links.
+Relevant YouTube videos.
+Practice tasks.
+Revision checklist.
+DSA email
+Include:
+Actual DSA day and date.
+Today's DSA topic.
+C++ explanations and examples.
+Relevant YouTube videos.
+Three mandatory LeetCode problems:
+🟢 Easy — 1 problem.
+🟡 Medium — 1 problem.
+🔴 Hard — 1 problem.
+Direct verified LeetCode links.
+Short descriptions and topic relevance.
+Daily DSA study schedule.
+Completion checklist.
+The three LeetCode problems must be prominently displayed in separate, attractive cards.
+Azure email
+Include:
+Actual Azure day and date.
+Today's Azure topic.
+Learning explanations.
+Official Microsoft Learn and Azure documentation links.
+Relevant YouTube videos.
+Hands-on practice suggestions.
+Revision checklist.
+Daily Azure study schedule.
+Track selection and delivery rules
+Every track must have its own correct day mapping.
+Never assume all three tracks have the same day number.
+Use the actual stored preparation schedule.
+Use Asia/Kolkata timezone.
+Do not mix unrelated track content.
+Respect the user's configured email delivery preference.
+If multiple tracks are selected for daily reports, separate them into clearly labeled sections with independent day numbers.
+If only one track is selected, send only that track's content.
+Do not send an empty or misleading report.
+Do not duplicate emails for the same track and preparation day.
+Keep the same premium email design:
+Warm Ivory: #F3EFE6
+Electric Black: #292929
+Terracotta: #E7826D
+Clean cards.
+Clear typography.
+Meaningful emojis.
+Mobile-responsive HTML.
+Attractive learning resource buttons.
+Professional footer.
+5. DATABASE AND RESOURCE STRUCTURE
+Ensure every resource is associated with:
+Owner user ID.
+Track ID.
+Day number.
+Preparation date.
+Topic.
+Resource type.
+Resource URL.
+Creation timestamp.
+Update timestamp.
+Support resource types such as:
+learning_material
+youtube_video
+leetcode_problem
+microsoft_learn
+daily_brief
+revision_note
+Preserve existing database data.
+Inspect the current schema before making changes.
+Use safe additive migrations only when necessary.
+Prevent duplicate resources and preserve track/day isolation.
+6. TESTING — ALL THREE TRACKS
+Test actual daily resource generation for:
+Main Plan
+Correct syllabus topic.
+Correct day number.
+Relevant learning links.
+Relevant YouTube videos.
+Correct email content.
+DSA C++
+Correct DSA topic.
+C++ explanations.
+Relevant YouTube videos.
+Exactly one Easy LeetCode problem.
+Exactly one Medium LeetCode problem.
+Exactly one Hard LeetCode problem.
+Three valid direct problem URLs.
+Correct email content.
+Azure
+Correct Azure topic.
+Relevant Microsoft Learn documentation.
+Relevant Azure learning material.
+Relevant YouTube videos.
+Correct email content.
+Also verify:
+Day 1 and Day 2 are different where their source topics differ.
+All three tracks maintain independent progress.
+Saturday and Sunday revision schedules are respected.
+No fabricated links.
+No duplicate emails.
+No existing user data is lost.
+Create separate preview emails for Main Plan, DSA and Azure.
+Do not send real emails without explicit approval.
+7. FINAL ACCEPTANCE REQUIREMENT
+The project is NOT complete if only the Main Plan has AI resources or email reporting.
+All three tracks must independently support:
+Feature	Main Plan	DSA C++	Azure
+Daily AI learning material	Mandatory	Mandatory	Mandatory
+Daily YouTube links	Mandatory	Mandatory	Mandatory
+Daily AI Brief	Mandatory	Mandatory	Mandatory
+Daily email report	Mandatory	Mandatory	Mandatory
+Day-wise accuracy	Mandatory	Mandatory	Mandatory
+Revision support	Mandatory	Mandatory	Mandatory
+Official learning links	Relevant sources	LeetCode links	Microsoft Learn links
+Special practice	Syllabus exercises	Easy + Medium + Hard LeetCode	Azure hands-on practice
+The DSA track MUST provide exactly 3 relevant LeetCode problems per day whenever valid problems are available: one Easy, one Medium and one Hard.
+The Azure track MUST provide both relevant learning material links and YouTube videos every active preparation day.
+Do not declare the project complete until these requirements are implemented and tested independently for all three tracks.
+Preserve every existing feature and all existing preparation progress.
+Do not deploy, push to GitHub, activate production cron or send real emails without explicit user approval.
+NOTE — EMAIL DESIGN REFERENCE
+Use the uploaded image as the primary visual reference for designing the daily automated emails in Steeven's 180-Day Preparation Tracker.
+Follow its clean, premium layout, Warm Ivory (#F3EFE6), Electric Black (#292929), and Terracotta (#E7826D) color palette, typography, rounded cards, spacing, icons, emojis, resource sections and professional footer.
+Important:
+Support all three tracks: Main Plan, DSA C++ and Azure.
+Adapt the email sections dynamically according to the selected track.
+DSA emails must include exactly 1 Easy, 1 Medium and 1 Hard relevant LeetCode problem, with verified direct links.
+Azure emails must include official Microsoft Learn/resource links and relevant YouTube videos.
+Main Plan emails must include actual syllabus topics and relevant learning resources.
+Always display the exact heading: "Steeven, Today You Have This Work! 🚀"
+Show the correct preparation day, date and track.
+Never use the sample image's topics or links as actual learning data. Fetch them from the application's real syllabus and verified resources.
+Make the final HTML email responsive and compatible with Gmail on desktop and mobile.
+Treat the uploaded image as a design reference, not as fixed content. Preserve all existing application functionality and data.

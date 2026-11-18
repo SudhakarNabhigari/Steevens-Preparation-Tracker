@@ -1,4 +1,4 @@
-import { TrackChecklistItem, TrackDaySchedule } from '../types';
+import type { TrackChecklistItem, TrackDaySchedule } from '../types';
 
 export const DSA_PDF_URL = '/assets/aistudio/DSA_CPP_100_Day_180_Style_Daily_Curriculum_7bad3ece.pdf';
 export const DSA_PDF_FILENAME = 'DSA_CPP_100_Day_180_Style_Daily_Curriculum.pdf';

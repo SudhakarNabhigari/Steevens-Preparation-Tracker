@@ -116,10 +116,10 @@ function mergeDefaultTrackPdfs(
   return base;
 }
 
-// Initial state for Steeven (Owner) — STRICTLY ZERO FAKE PROGRESS
+// Initial state for Steeven (Owner) — STRICTLY ZERO FAKE PROGRESS & ZERO HARDCODED PASSWORDS
 export const DEFAULT_OWNER_STATE: UserState = {
   username: 'Steeven',
-  passwordHash: 'Nani@011',
+  passwordHash: '',
   role: 'owner',
   isAuthenticated: false,
   completedTasks: {},
@@ -656,9 +656,263 @@ function buildGuestPersistPayload(state: UserState): UserState {
     role: 'guest',
     username: 'Guest',
     passwordHash: '',
+    authVerifier: undefined,
     // Keep personal progress fields intact; shared content is always overlaid from SHARED_CONTENT_STORAGE_KEY
     uploadedPdfs: [],
     resources: []
+  };
+}
+
+// Scrub any plaintext password field before persisting Owner state to LocalStorage or IndexedDB
+function buildOwnerPersistPayload(state: UserState): UserState {
+  return {
+    ...state,
+    role: 'owner',
+    passwordHash: ''
+  };
+}
+
+function parseIsoEpochMs(iso?: string | null): number {
+  if (!iso) return 0;
+  const ms = new Date(iso).getTime();
+  return Number.isFinite(ms) ? ms : 0;
+}
+
+function mergeTrackProgressSafely(
+  localTrack: TrackProgressState,
+  cloudTrack: Partial<TrackProgressState> | undefined,
+  localIsNewer: boolean
+): TrackProgressState {
+  if (!cloudTrack) return localTrack;
+
+  const olderTasks = localIsNewer ? cloudTrack.completedTasks || {} : localTrack.completedTasks;
+  const newerTasks = localIsNewer ? localTrack.completedTasks : cloudTrack.completedTasks || {};
+  const mergedTasks: Record<string, boolean> = { ...olderTasks, ...newerTasks };
+  for (const [k, v] of Object.entries(olderTasks)) {
+    if (v) mergedTasks[k] = true;
+  }
+
+  const olderDays = localIsNewer ? cloudTrack.completedDays || {} : localTrack.completedDays;
+  const newerDays = localIsNewer ? localTrack.completedDays : cloudTrack.completedDays || {};
+  const mergedDays: Record<number, boolean> = { ...olderDays, ...newerDays };
+  for (const [k, v] of Object.entries(olderDays)) {
+    if (v) mergedDays[Number(k)] = true;
+  }
+
+  const mergedNotes: Record<number, string> = {
+    ...(localIsNewer ? cloudTrack.dayNotes || {} : localTrack.dayNotes),
+    ...(localIsNewer ? localTrack.dayNotes : cloudTrack.dayNotes || {})
+  };
+  for (const [k, v] of Object.entries(localIsNewer ? cloudTrack.dayNotes || {} : localTrack.dayNotes)) {
+    const day = Number(k);
+    if (v && !mergedNotes[day]) mergedNotes[day] = v;
+  }
+
+  const mergedTime: Record<number, number> = { ...(cloudTrack.studyTimeSeconds || {}) };
+  for (const [k, v] of Object.entries(localTrack.studyTimeSeconds || {})) {
+    const day = Number(k);
+    mergedTime[day] = Math.max(mergedTime[day] || 0, Number(v) || 0);
+  }
+
+  const mergedRevisions = { ...(cloudTrack.revisionRecords || {}) };
+  for (const [k, rec] of Object.entries(localTrack.revisionRecords || {})) {
+    const wk = Number(k);
+    const existing = mergedRevisions[wk];
+    if (!existing) {
+      mergedRevisions[wk] = rec;
+    } else {
+      const localRevMs = parseIsoEpochMs(rec.completedAt);
+      const cloudRevMs = parseIsoEpochMs(existing.completedAt);
+      if (localRevMs >= cloudRevMs) mergedRevisions[wk] = rec;
+    }
+  }
+
+  return {
+    completedTasks: mergedTasks,
+    completedDays: mergedDays,
+    dayNotes: mergedNotes,
+    studyTimeSeconds: mergedTime,
+    revisionRecords: mergedRevisions,
+    lastActiveDayNumber: localIsNewer
+      ? localTrack.lastActiveDayNumber || cloudTrack.lastActiveDayNumber || 1
+      : cloudTrack.lastActiveDayNumber || localTrack.lastActiveDayNumber || 1
+  };
+}
+
+function mergeArrayById<T extends { id: string }>(
+  primary: T[],
+  secondary: T[] | undefined
+): T[] {
+  const map = new Map<string, T>();
+  for (const item of secondary || []) {
+    if (item?.id) map.set(item.id, item);
+  }
+  for (const item of primary || []) {
+    if (item?.id) map.set(item.id, item);
+  }
+  return Array.from(map.values());
+}
+
+export interface SafeMergeResult {
+  merged: UserState;
+  conflictDetected: boolean;
+  resolution: 'local_newer' | 'cloud_newer' | 'merged_equal';
+  shouldPushMergedToCloud: boolean;
+}
+
+/**
+ * Timestamp-aware non-destructive Owner progress merge.
+ * Preserves newer local progress while merging distinct records across Main, DSA, Azure,
+ * assessments, LeetCode, notes, timers, doubts, resources, and PDF metadata.
+ */
+export function mergeOwnerStatesSafely(
+  localState: UserState,
+  cloudRaw: Partial<UserState>,
+  nowMs: number = Date.now()
+): SafeMergeResult {
+  const cleanLocal = hydrateUserState(localState, 'owner', nowMs);
+  const cleanCloud = hydrateUserState(cloudRaw, 'owner', nowMs);
+
+  const localMs = parseIsoEpochMs(cleanLocal.lastSavedTimestamp);
+  const cloudMs = parseIsoEpochMs(cleanCloud.lastSavedTimestamp);
+  const localIsNewer = localMs >= cloudMs;
+  const conflictDetected = localMs > 0 && cloudMs > 0 && Math.abs(localMs - cloudMs) > 1000;
+
+  const primary = localIsNewer ? cleanLocal : cleanCloud;
+  const secondary = localIsNewer ? cleanCloud : cleanLocal;
+
+  // Main Plan union merge
+  const completedTasks: Record<string, boolean> = {
+    ...secondary.completedTasks,
+    ...primary.completedTasks
+  };
+  for (const [k, v] of Object.entries(secondary.completedTasks)) {
+    if (v) completedTasks[k] = true;
+  }
+
+  const completedDays: Record<number, boolean> = {
+    ...secondary.completedDays,
+    ...primary.completedDays
+  };
+  for (const [k, v] of Object.entries(secondary.completedDays)) {
+    if (v) completedDays[Number(k)] = true;
+  }
+
+  const dayNotes: Record<number, string> = {
+    ...secondary.dayNotes,
+    ...primary.dayNotes
+  };
+  for (const [k, v] of Object.entries(secondary.dayNotes)) {
+    const day = Number(k);
+    if (v && !dayNotes[day]) dayNotes[day] = v;
+  }
+
+  const studyTimeSeconds: Record<number, number> = { ...secondary.studyTimeSeconds };
+  for (const [k, v] of Object.entries(primary.studyTimeSeconds)) {
+    const day = Number(k);
+    studyTimeSeconds[day] = Math.max(studyTimeSeconds[day] || 0, Number(v) || 0);
+  }
+
+  // Assessments union (prefer newer submission if same week)
+  const assessmentSubmissions: Record<number, AssessmentSubmission> = {
+    ...secondary.assessmentSubmissions
+  };
+  for (const [k, sub] of Object.entries(primary.assessmentSubmissions)) {
+    const wk = Number(k);
+    const other = assessmentSubmissions[wk];
+    if (!other || parseIsoEpochMs(sub.submittedAt) >= parseIsoEpochMs(other.submittedAt)) {
+      assessmentSubmissions[wk] = sub;
+    }
+  }
+
+  // LeetCode progress union (never lose completed=true or notes)
+  const leetcodeProgress: Record<string, LeetCodeProgressEntry> = {
+    ...secondary.leetcodeProgress
+  };
+  for (const [probId, entry] of Object.entries(primary.leetcodeProgress)) {
+    const other = leetcodeProgress[probId];
+    if (!other) {
+      leetcodeProgress[probId] = entry;
+    } else {
+      leetcodeProgress[probId] = {
+        completed: Boolean(entry.completed || other.completed),
+        completedAt: entry.completedAt || other.completedAt,
+        notes: entry.notes || other.notes
+      };
+    }
+  }
+
+  // PDFs: preserve local inline data: URLs if cloud record does not yet have a storagePath
+  const pdfMap = new Map<string, RoadmapPdfRecord>();
+  for (const pdf of secondary.uploadedPdfs) {
+    pdfMap.set(pdf.id, pdf);
+  }
+  for (const pdf of primary.uploadedPdfs) {
+    const existing = pdfMap.get(pdf.id);
+    if (!existing) {
+      pdfMap.set(pdf.id, pdf);
+    } else {
+      pdfMap.set(pdf.id, {
+        ...existing,
+        ...pdf,
+        fileUrl:
+          pdf.fileUrl && (pdf.fileUrl.startsWith('data:') || pdf.fileUrl.startsWith('/'))
+            ? pdf.fileUrl
+            : existing.fileUrl || pdf.fileUrl,
+        storagePath: pdf.storagePath || existing.storagePath
+      });
+    }
+  }
+
+  const mergedPdfs = Array.from(pdfMap.values());
+  const resolvedActivePdfId = mergedPdfs.some(p => p.id === primary.activePdfId)
+    ? primary.activePdfId
+    : mergedPdfs[0]?.id || primary.activePdfId;
+
+  const mergedSharedSettings: SharedAppSettings =
+    parseIsoEpochMs(cleanLocal.sharedSettings?.updatedAt) >=
+    parseIsoEpochMs(cleanCloud.sharedSettings?.updatedAt)
+      ? cleanLocal.sharedSettings
+      : cleanCloud.sharedSettings;
+
+  const dailyAiResourceCompletions: Record<string, boolean> = {
+    ...(secondary.dailyAiResourceCompletions || {}),
+    ...(primary.dailyAiResourceCompletions || {})
+  };
+  for (const [k, v] of Object.entries(secondary.dailyAiResourceCompletions || {})) {
+    if (v) dailyAiResourceCompletions[k] = true;
+  }
+
+  const merged: UserState = {
+    ...primary,
+    role: 'owner',
+    passwordHash: '',
+    authVerifier: cleanLocal.authVerifier || cleanCloud.authVerifier,
+    isAuthenticated: localState.isAuthenticated,
+    completedTasks,
+    completedDays,
+    dayNotes,
+    studyTimeSeconds,
+    assessmentSubmissions,
+    leetcodeProgress,
+    activeAssessmentAttempt: primary.activeAssessmentAttempt || secondary.activeAssessmentAttempt || null,
+    studyLogs: mergeArrayById(primary.studyLogs, secondary.studyLogs),
+    dsaProgress: mergeTrackProgressSafely(cleanLocal.dsaProgress, cleanCloud.dsaProgress, localIsNewer),
+    azureProgress: mergeTrackProgressSafely(cleanLocal.azureProgress, cleanCloud.azureProgress, localIsNewer),
+    uploadedPdfs: mergedPdfs.map(p => ({ ...p, isActiveRoadmap: p.id === resolvedActivePdfId })),
+    activePdfId: resolvedActivePdfId,
+    resources: mergeArrayById(primary.resources, secondary.resources),
+    doubtEntries: mergeArrayById(primary.doubtEntries, secondary.doubtEntries),
+    sharedSettings: mergedSharedSettings,
+    dailyAiResourceCompletions,
+    lastSavedTimestamp: new Date(Math.max(localMs, cloudMs, nowMs)).toISOString()
+  };
+
+  return {
+    merged,
+    conflictDetected,
+    resolution: localMs === cloudMs ? 'merged_equal' : localIsNewer ? 'local_newer' : 'cloud_newer',
+    shouldPushMergedToCloud: localIsNewer || conflictDetected
   };
 }
 
@@ -667,7 +921,7 @@ export async function saveRoleStatePermanent(state: UserState): Promise<boolean>
   const isOwner = state.role === 'owner';
   const key = isOwner ? OWNER_STORAGE_KEY : GUEST_STORAGE_KEY;
   const timestampedState: UserState = isOwner
-    ? { ...state, lastSavedTimestamp: new Date().toISOString() }
+    ? buildOwnerPersistPayload({ ...state, lastSavedTimestamp: new Date().toISOString() })
     : buildGuestPersistPayload({ ...state, lastSavedTimestamp: new Date().toISOString() });
 
   let localStorageOk = false;
