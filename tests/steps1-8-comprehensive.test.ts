@@ -376,7 +376,7 @@ test('Step 4: Daily AI brief enrichment handles Main/DSA/Azure independently and
   assert.equal(dsaGen.leetcodeQuestions.length, 3);
   assert.equal(azureGen.leetcodeQuestions.length, 0);
 
-  // Subsequent refresh where Gemini hits transient quota preserves prior gemini_generated content
+  // Subsequent refresh preserves prior content but records that this refresh used fallback.
   const afterOutage = await generateTrackDailyCanonical(
     'main',
     1,
@@ -394,9 +394,9 @@ test('Step 4: Daily AI brief enrichment handles Main/DSA/Azure independently and
       existingCached: mainGen
     }
   );
-  assert.equal(afterOutage.aiProviderStatus, 'gemini_generated');
+  assert.equal(afterOutage.aiProviderStatus, 'quota_exhausted_cached');
   assert.equal(afterOutage.topicExplanation, mainGen.topicExplanation);
-  assert.equal(afterOutage.modelUsed, FREE_TIER_GEMINI_MODEL);
+  assert.equal(afterOutage.modelUsed, undefined);
 });
 
 // ============================================================================

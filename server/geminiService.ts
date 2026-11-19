@@ -63,16 +63,25 @@ function extractErrorDetails(err: unknown): { status: number; message: string } 
   return { status: rawStatus, message };
 }
 
-function isTransientServerError(status: number, message: string): boolean {
-  if (status >= 500 && status < 600) return true;
-  const lower = message.toLowerCase();
-  return (
-    lower.includes('timeout') ||
-    lower.includes('econnreset') ||
-    lower.includes('unavailable') ||
-    lower.includes('503') ||
-    lower.includes('502')
-  );
+function getRetryAfter(err: unknown): string | null {
+  if (!err || typeof err !== 'object') return null;
+  const obj = err as Record<string, unknown>;
+  const response = obj.response as { headers?: { get?: (name: string) => string | null } } | undefined;
+  const headers = obj.headers as { get?: (name: string) => string | null } | undefined;
+  return response?.headers?.get?.('retry-after') || headers?.get?.('retry-after') || null;
+}
+
+function retryDelayMs(attempt: number, retryAfter: string | null): number | null {
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    const delay = Number.isFinite(seconds) ? seconds * 1000 : Date.parse(retryAfter) - Date.now();
+    if (Number.isFinite(delay) && delay >= 0) return delay > 8000 ? null : delay;
+  }
+  return Math.floor(Math.min(400 * 2 ** (attempt - 1), 8000) * (0.5 + Math.random() * 0.5));
+}
+
+function isHardQuotaExhaustion(message: string): boolean {
+  return /quota\s+(?:has\s+been\s+)?(?:exceeded|exhausted)|(?:exceeded|exhausted)\s+(?:the\s+)?(?:current\s+)?quota|daily\s+quota|billing\s+(?:account|plan)/i.test(message);
 }
 
 export async function generateGroundedDailyBrief(
@@ -85,6 +94,9 @@ export async function generateGroundedDailyBrief(
 ): Promise<GeminiGenerationResult> {
   const apiKey = (geminiApiKey ?? process.env.PREPARATION_GEMINI_KEY ?? '').trim();
   if (!apiKey && !clientOverride) {
+    console.warn('[daily-resources] Gemini fallback selected', {
+      provider: 'gemini', model: FREE_TIER_GEMINI_MODEL, track: ctx.trackId, reason: 'missing_api_key'
+    });
     return {
       success: false,
       aiProviderStatus: 'missing_api_key',
@@ -168,7 +180,7 @@ export async function generateGroundedDailyBrief(
     }
   };
 
-  const maxAttempts = 2;
+  const maxAttempts = 3;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
     try {
@@ -190,6 +202,9 @@ export async function generateGroundedDailyBrief(
       }
 
       const parsed = JSON.parse(rawText) as GeminiEnrichmentOutput;
+      console.info('[daily-resources] Gemini generation succeeded', {
+        provider: 'gemini', model: FREE_TIER_GEMINI_MODEL, track: ctx.trackId, attempt
+      });
       return {
         success: true,
         aiProviderStatus: 'gemini_generated',
@@ -201,10 +216,32 @@ export async function generateGroundedDailyBrief(
       const quotaHit = isQuotaOrRateLimitStatusOrMsg(status, message);
       const invalidKey = !quotaHit && isInvalidOrDisabledApiKeyStatusOrMsg(status, message);
 
-      if (!quotaHit && !invalidKey && attempt < maxAttempts && isTransientServerError(status, message)) {
-        await new Promise((r) => setTimeout(r, 350));
+      const retryAfter = getRetryAfter(err);
+      const temporaryRateLimit = status === 429 && !isHardQuotaExhaustion(message);
+      const temporaryServerFailure = status >= 500 && status < 600;
+      const retryDelay = retryDelayMs(attempt, retryAfter);
+      if (!invalidKey && attempt < maxAttempts && (temporaryRateLimit || temporaryServerFailure) && retryDelay !== null) {
+        console.warn('[daily-resources] Gemini transient failure; retrying', {
+          provider: 'gemini', model: FREE_TIER_GEMINI_MODEL, track: ctx.trackId,
+          status: status || undefined, attempt, maxAttempts, retryAfter: retryAfter || undefined
+        });
+        await new Promise((r) => setTimeout(r, retryDelay));
         continue;
       }
+
+      if (retryDelay === null && attempt < maxAttempts && (temporaryRateLimit || temporaryServerFailure)) {
+        console.warn('[daily-resources] Gemini retry deferred to a later run', {
+          provider: 'gemini', model: FREE_TIER_GEMINI_MODEL, track: ctx.trackId,
+          status: status || undefined, reason: 'retry_after_exceeds_bounded_wait', attempt
+        });
+      }
+
+      console.warn('[daily-resources] Gemini fallback selected', {
+        provider: 'gemini', model: FREE_TIER_GEMINI_MODEL, track: ctx.trackId,
+        status: status || undefined,
+        reason: quotaHit ? 'quota_or_rate_limit' : invalidKey ? 'invalid_key' : 'provider_error',
+        attempt
+      });
 
       return {
         success: false,

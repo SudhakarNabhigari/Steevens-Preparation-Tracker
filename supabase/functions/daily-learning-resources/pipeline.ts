@@ -15,6 +15,38 @@ export const SUB_TRACK_MAX_DAYS = 100;
 export const DEFAULT_DAILY_RECIPIENT = 'mypreparation0111@gmail.com';
 export const DEFAULT_APP_URL = 'https://my-preparation.vercel.app';
 export const FREE_TIER_GEMINI_MODEL = 'gemini-4-hydrogen';
+const GEMINI_MAX_ATTEMPTS = 3;
+const GEMINI_RETRY_BASE_MS = 400;
+const GEMINI_RETRY_MAX_MS = 8000;
+
+function retryAfterMs(value: string | null): number | undefined | null {
+  if (!value) return undefined;
+  const seconds = Number(value);
+  const delay = Number.isFinite(seconds) && seconds >= 0
+    ? seconds * 1000
+    : Date.parse(value) - Date.now();
+  if (!Number.isFinite(delay) || delay < 0) return undefined;
+  // Do not retry earlier than the server requested. If its delay exceeds this
+  // request's bounded retry budget, let this track fall back and try next run.
+  return delay > GEMINI_RETRY_MAX_MS ? null : delay;
+}
+
+function isRetryableGeminiStatus(status: number): boolean {
+  return status === 429 || status === 503 || status === 502 || status === 504;
+}
+
+async function waitBeforeGeminiRetry(attempt: number, retryAfter: string | null): Promise<boolean> {
+  const serverDelay = retryAfterMs(retryAfter);
+  if (serverDelay === null) return false;
+  const exponentialDelay = Math.min(GEMINI_RETRY_BASE_MS * 2 ** (attempt - 1), GEMINI_RETRY_MAX_MS);
+  const jitteredDelay = Math.floor(exponentialDelay * (0.5 + Math.random() * 0.5));
+  await new Promise((resolve) => setTimeout(resolve, serverDelay ?? jitteredDelay));
+  return true;
+}
+
+function isHardQuotaExhaustion(message: string): boolean {
+  return /quota\s+(?:has\s+been\s+)?(?:exceeded|exhausted)|(?:exceeded|exhausted)\s+(?:the\s+)?(?:current\s+)?quota|daily\s+quota|billing\s+(?:account|plan)/i.test(message);
+}
 
 export type CanonicalResourceStatus =
   | 'loading'
@@ -817,7 +849,7 @@ export function buildActualScheduleMeta(ctx: SharedCurriculumDayContext): {
 }
 
 // =========================================================================
-// GEMINI FREE TIER ENRICHMENT (STRICTLY gemini-4-hydrogen, PREPARATION_GEMINI_KEY)
+// GEMINI ENRICHMENT (gemini-4-hydrogen, PREPARATION_GEMINI_KEY)
 // =========================================================================
 export interface GeminiEnrichmentOutput {
   topicExplanation: string;
@@ -894,6 +926,9 @@ export async function generateGroundedDailyBrief(
 ): Promise<GeminiGenerationResult> {
   const apiKey = geminiApiKey?.trim();
   if (!apiKey) {
+    console.warn('[daily-resources] Gemini fallback selected', {
+      provider: 'gemini', model: FREE_TIER_GEMINI_MODEL, track: ctx.trackId, reason: 'missing_api_key'
+    });
     return {
       success: false,
       aiProviderStatus: 'missing_api_key',
@@ -927,7 +962,8 @@ export async function generateGroundedDailyBrief(
     }))
   };
 
-  try {
+  for (let attempt = 1; attempt <= GEMINI_MAX_ATTEMPTS; attempt += 1) {
+   try {
     const resp = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${FREE_TIER_GEMINI_MODEL}:generateContent?key=${encodeURIComponent(
         apiKey
@@ -1007,6 +1043,30 @@ export async function generateGroundedDailyBrief(
       const errText = await resp.text().catch(() => '');
       const quotaHit = isQuotaOrRateLimitStatusOrMsg(resp.status, errText);
       const invalidKey = !quotaHit && isInvalidOrDisabledApiKeyStatusOrMsg(resp.status, errText);
+      const retryAfter = resp.headers.get('retry-after');
+      const retryableResponse = isRetryableGeminiStatus(resp.status) &&
+        !(resp.status === 429 && isHardQuotaExhaustion(errText));
+      if (retryableResponse && attempt < GEMINI_MAX_ATTEMPTS) {
+        const waited = await waitBeforeGeminiRetry(attempt, retryAfter);
+        if (!waited) {
+          console.warn('[daily-resources] Gemini retry deferred to a later run', {
+            provider: 'gemini', model: FREE_TIER_GEMINI_MODEL, track: ctx.trackId,
+            status: resp.status, reason: 'retry_after_exceeds_bounded_wait', attempt
+          });
+        } else {
+        console.warn('[daily-resources] Gemini transient response; retrying', {
+          provider: 'gemini', model: FREE_TIER_GEMINI_MODEL, track: ctx.trackId,
+          status: resp.status, attempt, maxAttempts: GEMINI_MAX_ATTEMPTS,
+          retryAfter: retryAfter || undefined
+        });
+        continue;
+        }
+      }
+      console.warn('[daily-resources] Gemini fallback selected', {
+        provider: 'gemini', model: FREE_TIER_GEMINI_MODEL, track: ctx.trackId,
+        status: resp.status, reason: quotaHit ? 'quota_or_rate_limit' : invalidKey ? 'invalid_key' : 'provider_error',
+        attempt
+      });
       return {
         success: false,
         aiProviderStatus: quotaHit
@@ -1035,16 +1095,34 @@ export async function generateGroundedDailyBrief(
     }
 
     const parsed = JSON.parse(rawText) as GeminiEnrichmentOutput;
+    console.info('[daily-resources] Gemini generation succeeded', {
+      provider: 'gemini', model: FREE_TIER_GEMINI_MODEL, track: ctx.trackId, attempt
+    });
     return {
       success: true,
       aiProviderStatus: 'gemini_generated',
       modelUsed: FREE_TIER_GEMINI_MODEL,
       data: parsed
     };
-  } catch (err) {
+   } catch (err) {
     const detail = err instanceof Error ? err.message : 'Gemini API call failed.';
+    const statusMatch = detail.match(/(?:HTTP|status|code)\s*[:=]?\s*(429|502|503|504)\b/i);
+    const status = statusMatch ? Number(statusMatch[1]) : 0;
+    if (isRetryableGeminiStatus(status) && attempt < GEMINI_MAX_ATTEMPTS) {
+      console.warn('[daily-resources] Gemini transient failure; retrying', {
+        provider: 'gemini', model: FREE_TIER_GEMINI_MODEL, track: ctx.trackId,
+        status, attempt, maxAttempts: GEMINI_MAX_ATTEMPTS
+      });
+      await waitBeforeGeminiRetry(attempt, null);
+      continue;
+    }
     const quotaHit = isQuotaOrRateLimitStatusOrMsg(0, detail);
     const invalidKey = !quotaHit && isInvalidOrDisabledApiKeyStatusOrMsg(0, detail);
+    console.warn('[daily-resources] Gemini fallback selected', {
+      provider: 'gemini', model: FREE_TIER_GEMINI_MODEL, track: ctx.trackId,
+      status: status || undefined, reason: quotaHit ? 'quota_or_rate_limit' : invalidKey ? 'invalid_key' : 'provider_error',
+      attempt
+    });
     return {
       success: false,
       aiProviderStatus: quotaHit
@@ -1058,7 +1136,9 @@ export async function generateGroundedDailyBrief(
         ? `PREPARATION_GEMINI_KEY is invalid or disabled (${detail}).`
         : `Gemini generation unavailable: ${detail}`
     };
+   }
   }
+  return { success: false, aiProviderStatus: 'unavailable', errorMessage: 'Gemini retries exhausted.' };
 }
 
 // =========================================================================
@@ -2877,11 +2957,9 @@ export async function generateTrackDailyCanonical(
     finalGuidance = g.dailyGuidance;
     finalExerciseSummary = g.practicalExerciseSummary;
   } else {
-    const preservedPreviousAi = existingCached?.aiProviderStatus === 'gemini_generated';
-    aiStatus = preservedPreviousAi ? 'gemini_generated' : geminiResult.aiProviderStatus;
-    if (preservedPreviousAi) {
-      modelUsed = existingCached?.modelUsed || FREE_TIER_GEMINI_MODEL;
-    }
+    // The result below is fallback/cached content for this run; keep the failed
+    // provider status so clients never label it as newly generated AI output.
+    aiStatus = geminiResult.aiProviderStatus;
     const fallback = buildFallbackBrief(
       ctx,
       ytResult.tutorials,
@@ -2923,10 +3001,12 @@ export async function generateTrackDailyCanonical(
       );
     } else if (aiStatus === 'quota_exhausted_cached') {
       statusNotes.push(
-        'Gemini quota reached; displaying grounded curriculum / cached notes.'
+        `Gemini fallback: ${geminiResult.errorMessage || 'quota or rate limit reached'}; displaying grounded curriculum${existingCached?.aiProviderStatus === 'gemini_generated' ? ' and previously cached Gemini notes' : ''}. No new Gemini content was generated for this track.`
       );
     } else if (aiStatus === 'unavailable') {
-      statusNotes.push(geminiResult.errorMessage || 'Gemini enrichment temporarily unavailable.');
+      statusNotes.push(
+        `Gemini fallback: ${geminiResult.errorMessage || 'provider temporarily unavailable'}; displaying grounded curriculum${existingCached?.aiProviderStatus === 'gemini_generated' ? ' and previously cached Gemini notes' : ''}. No new Gemini content was generated for this track.`
+      );
     }
     if (ytResult.providerStatus !== 'youtube_api_verified') {
       statusNotes.push(ytResult.statusNote);
