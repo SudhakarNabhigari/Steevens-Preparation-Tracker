@@ -13,6 +13,7 @@ import {
   generateTrackDailyCanonical,
   isSupabaseServerConfigured,
   isTrackDayCurrentlyUnlockedCanonical,
+  LEGACY_GUEST_START_DATE_IST,
   syncAutomationRunToSupabase,
   syncTrackResourcesToSupabase,
   verifyCronRequest,
@@ -243,22 +244,26 @@ test('Step 2 Tasks 5 & 6: Main, DSA, and Azure round-trip independently without 
   const mainDay1 = await generateTrackDailyCanonical('main', 1, config, {
     forceRefresh: true,
     persistToCloud: true,
-    skipExternalNetworkChecks: true
+    skipExternalNetworkChecks: true,
+    scheduleStartIsoIst: LEGACY_GUEST_START_DATE_IST
   });
   const dsaDay1 = await generateTrackDailyCanonical('dsa', 1, config, {
     forceRefresh: true,
     persistToCloud: true,
-    skipExternalNetworkChecks: true
+    skipExternalNetworkChecks: true,
+    scheduleStartIsoIst: LEGACY_GUEST_START_DATE_IST
   });
   const dsaDay2 = await generateTrackDailyCanonical('dsa', 2, config, {
     forceRefresh: true,
     persistToCloud: true,
-    skipExternalNetworkChecks: true
+    skipExternalNetworkChecks: true,
+    scheduleStartIsoIst: LEGACY_GUEST_START_DATE_IST
   });
   const azureDay1 = await generateTrackDailyCanonical('azure', 1, config, {
     forceRefresh: true,
     persistToCloud: true,
-    skipExternalNetworkChecks: true
+    skipExternalNetworkChecks: true,
+    scheduleStartIsoIst: LEGACY_GUEST_START_DATE_IST
   });
 
   // Persist again to confirm idempotent upsert does NOT create duplicates

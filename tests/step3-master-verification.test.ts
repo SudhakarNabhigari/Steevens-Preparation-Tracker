@@ -22,6 +22,8 @@ import {
   buildSupabaseRestHeadersCanonical,
   discoverYouTubeTutorials,
   FREE_TIER_GEMINI_MODEL,
+  LEGACY_GUEST_START_DATE_IST,
+  generateGroundedDailyBrief as generateEdgeGeminiBrief,
   generateTrackDailyCanonical,
   getIstScheduleSnapshotCanonical,
   isValidHttpsUrl,
@@ -174,11 +176,19 @@ test('Stage 4: server/geminiService.ts uses gemini-4-hydrogen, classifies invali
   assert.equal(invalidRes.aiProviderStatus, 'invalid_api_key');
 
   // 3. Simulated 429 RESOURCE_EXHAUSTED -> quota_exhausted_cached
+  let quotaCalls = 0;
   const quotaClient: GeminiClientLike = {
     models: {
       generateContent: async () => {
-        const err = new Error('RESOURCE_EXHAUSTED: Quota exceeded') as Error & { status: number };
+        quotaCalls += 1;
+        const err = new Error('RESOURCE_EXHAUSTED: Quota exceeded') as Error & {
+          status: number;
+          response?: { headers: Headers };
+        };
         err.status = 429;
+        err.response = {
+          headers: new Headers({ 'retry-after': '0' })
+        };
         throw err;
       }
     }
@@ -186,6 +196,7 @@ test('Stage 4: server/geminiService.ts uses gemini-4-hydrogen, classifies invali
   const quotaRes = await generateGroundedDailyBrief(ctx, [], [], [], 'fake-quota-key', quotaClient);
   assert.equal(quotaRes.success, false);
   assert.equal(quotaRes.aiProviderStatus, 'quota_exhausted_cached');
+  assert.equal(quotaCalls, 1, 'Hard quota exhaustion must not be retried, even with Retry-After.');
 
   // 4. Simulated transient 503 followed by valid JSON from gemini-4-hydrogen
   let calls = 0;
@@ -222,6 +233,85 @@ test('Stage 4: server/geminiService.ts uses gemini-4-hydrogen, classifies invali
   assert.equal(okRes.success, true);
   assert.equal(okRes.aiProviderStatus, 'gemini_generated');
   assert.ok(okRes.data?.practicalExamples[0].includes('int& ref'));
+});
+
+test('Gemini Edge request retries temporary statuses, defers long Retry-After, and shares key/model across tracks', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalWarn = console.warn;
+  const originalInfo = console.info;
+  console.warn = () => {};
+  console.info = () => {};
+  const fakeKey = 'test-only-edge-key';
+  const validOutput = JSON.stringify({
+    topicExplanation: 'Grounded explanation', learningObjectives: ['Objective'],
+    practicalExamples: ['Example'], revisionNotes: ['Note'], commonMistakes: ['Mistake'],
+    suggestedLearningOrder: ['Docs'], dailyGuidance: 'Guidance',
+    practicalExerciseSummary: 'Exercise', youtubeAnnotations: []
+  });
+  try {
+    const ctxs = ['main', 'dsa', 'azure'].map((track) => getSharedCurriculumDayContext(track as 'main' | 'dsa' | 'azure', 1));
+    assert.ok(ctxs.every(Boolean));
+    for (const status of [429, 502, 503, 504]) {
+      let calls = 0;
+      let requestUrl = '';
+      globalThis.fetch = async (input) => {
+        calls += 1;
+        requestUrl = String(input);
+        if (calls === 1) {
+          return new Response(JSON.stringify({ error: { message: 'Temporary upstream failure' } }), {
+            status, headers: { 'Retry-After': '0' }
+          });
+        }
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: validOutput }] } }] }));
+      };
+      const result = await generateEdgeGeminiBrief(ctxs[0]!, [], [], [], fakeKey);
+      assert.equal(result.success, true, `HTTP ${status} should retry a temporary response.`);
+      assert.equal(calls, 2);
+      const parsedUrl = new URL(requestUrl);
+      assert.equal(parsedUrl.pathname, `/v1beta/models/${FREE_TIER_GEMINI_MODEL}:generateContent`);
+      assert.equal(parsedUrl.searchParams.get('key'), fakeKey);
+    }
+
+    // Same configured argument and model are used for each independent track.
+    for (const ctx of ctxs) {
+      let requestUrl = '';
+      globalThis.fetch = async (input) => {
+        requestUrl = String(input);
+        return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: validOutput }] } }] }));
+      };
+      const result = await generateEdgeGeminiBrief(ctx!, [], [], [], fakeKey);
+      assert.equal(result.modelUsed, FREE_TIER_GEMINI_MODEL);
+      const parsedUrl = new URL(requestUrl);
+      assert.equal(parsedUrl.searchParams.get('key'), fakeKey);
+      assert.equal(parsedUrl.pathname, `/v1beta/models/${FREE_TIER_GEMINI_MODEL}:generateContent`);
+    }
+
+    let quotaCalls = 0;
+    globalThis.fetch = async () => {
+      quotaCalls += 1;
+      return new Response(JSON.stringify({ error: { message: 'Daily quota exceeded' } }), {
+        status: 429, headers: { 'Retry-After': '0' }
+      });
+    };
+    const quotaResult = await generateEdgeGeminiBrief(ctxs[1]!, [], [], [], fakeKey);
+    assert.equal(quotaResult.aiProviderStatus, 'quota_exhausted_cached');
+    assert.equal(quotaCalls, 1, 'Explicit quota exhaustion must not be retried.');
+
+    let deferredCalls = 0;
+    globalThis.fetch = async () => {
+      deferredCalls += 1;
+      return new Response(JSON.stringify({ error: { message: 'Temporary upstream failure' } }), {
+        status: 503, headers: { 'Retry-After': '9' }
+      });
+    };
+    const deferredResult = await generateEdgeGeminiBrief(ctxs[2]!, [], [], [], fakeKey);
+    assert.equal(deferredResult.aiProviderStatus, 'unavailable');
+    assert.equal(deferredCalls, 1, 'Do not retry before a Retry-After delay outside the bounded wait budget.');
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.warn = originalWarn;
+    console.info = originalInfo;
+  }
 });
 
 // ============================================================================
@@ -290,8 +380,9 @@ test('Stage 3 & 5: Main, DSA, and Azure Day 1 vs Day 2 schedules, C++ examples, 
             {
               id: 'abc123def45',
               snippet: {
-                title: 'C++ Pointers & Complexity Deep Dive',
+                title: 'C++ compiler setup and first program: Hello World',
                 channelTitle: 'TakeUForward',
+                channelId: 'UCJskGeByzRRSvmOyZOz61ig',
                 description: 'Complete C++ intro',
                 thumbnails: { medium: { url: 'https://i.ytimg.com/vi/abc123def45/mqdefault.jpg' } }
               },
@@ -301,8 +392,9 @@ test('Stage 3 & 5: Main, DSA, and Azure Day 1 vs Day 2 schedules, C++ examples, 
             {
               id: 'xyz987uvw12',
               snippet: {
-                title: 'Time & Space Complexity in C++',
-                channelTitle: 'CodeHelp',
+                title: 'C++ setup and first program with compiler walkthrough',
+                channelTitle: 'Code With Swaroop',
+                channelId: 'UCfIrO-HaaLeXBL46Jug242g',
                 description: 'Big-O analysis examples',
                 thumbnails: { medium: { url: 'https://i.ytimg.com/vi/xyz987uvw12/mqdefault.jpg' } }
               },
@@ -352,6 +444,7 @@ test('Stage 3 & 5: Main, DSA, and Azure Day 1 vs Day 2 schedules, C++ examples, 
       {
         forceRefresh: false,
         skipExternalNetworkChecks: true,
+        scheduleStartIsoIst: LEGACY_GUEST_START_DATE_IST,
         existingCached: {
           ...dsaD1,
           aiProviderStatus: 'gemini_generated',
@@ -362,7 +455,7 @@ test('Stage 3 & 5: Main, DSA, and Azure Day 1 vs Day 2 schedules, C++ examples, 
       }
     );
     assert.equal(cachedTrack.status, 'cached');
-    assert.equal(searchCount, 1, 'Should reuse existing verified cache without calling YouTube search again');
+    assert.equal(searchCount, 6, 'Should query the six approved channels once and reuse the verified cache');
   } finally {
     globalThis.fetch = origFetch;
   }
@@ -458,11 +551,7 @@ test('Stage 6: Renders branded Main/DSA/Azure/Combined emails + serves read-only
     const previewDsa = await fetch(
       `http://127.0.0.1:${port}/api/daily-resources/email-preview?track=dsa&day=1`
     );
-    assert.equal(previewDsa.status, 200);
-    const previewJson = (await previewDsa.json()) as { ok: boolean; html: string; subject: string };
-    assert.equal(previewJson.ok, true);
-    assert.ok(previewJson.html.includes('Steeven, Today You Have This Work! 🚀'));
-    assert.ok(previewJson.subject.includes('Day 1'));
+    assert.equal(previewDsa.status, 403, 'Owner Day 1 email preview remains locked until the relaunch date.');
 
     const badTrack = await fetch(
       `http://127.0.0.1:${port}/api/daily-resources/email-preview?track=invalid`

@@ -31,8 +31,10 @@ import {
   isDayUnlockedByIstClock,
   getCurrentIstScheduleDay,
   MAIN_TRACK_MAX_DAYS,
-  SUB_TRACK_MAX_DAYS
+  SUB_TRACK_MAX_DAYS,
+  DAILY_PREPARATION_START_ISO_IST
 } from '../utils/dailyLock';
+import { createOwnerRelaunchCycle, isBeforeOwnerRelaunch, OWNER_RELAUNCH_CYCLE_ID, OWNER_RELAUNCH_START_ISO_IST, OWNER_RELAUNCH_START_MS } from '../utils/relaunch';
 import {
   applyRubricSelfReviewToSubmission,
   buildAssessmentSnapshot,
@@ -120,6 +122,8 @@ interface AppContextType {
   // Real clock & lock state
   nowTimestamp: number;
   isPreparationLocked: boolean;
+  ownerRelaunchServerReady: boolean;
+  ownerRelaunchTransitionReady: boolean;
   lockTimeRemaining: {
     days: number;
     hours: number;
@@ -229,6 +233,7 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
 const START_DATE_MS = new Date(START_DATE_IST).getTime();
+const preparationStartForRole = (role: UserRole) => role === 'owner' ? OWNER_RELAUNCH_START_ISO_IST : DAILY_PREPARATION_START_ISO_IST;
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Never preload Owner personal data into active React state prior to authentication.
@@ -246,6 +251,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   } | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   const [nowTimestamp, setNowTimestamp] = useState<number>(Date.now());
+  const [ownerRelaunchServerReady, setOwnerRelaunchServerReady] = useState(false);
+  const serverTimeAnchorRef = useRef<{ serverMs: number; perfMs: number } | null>(null);
   const [testModeEnabled, setTestModeEnabled] = useState<boolean>(false);
   const [testModeDate, setTestModeDate] = useState<string | null>(null);
   const [isOwnerSupabaseSessionActive, setIsOwnerSupabaseSessionActive] = useState<boolean>(false);
@@ -259,6 +266,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const authActionInProgressRef = useRef<boolean>(false);
   const stateRef = useRef<UserState>(state);
   stateRef.current = state;
+  const getClockNow = useCallback(() => {
+    if (stateRef.current.role !== 'owner') return Date.now();
+    const anchor = serverTimeAnchorRef.current;
+    return anchor ? anchor.serverMs + Math.max(0, performance.now() - anchor.perfMs) : 0;
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const syncTime = async () => {
+      try {
+        const response = await fetch('/api/relaunch/status', { cache: 'no-store' });
+        if (!response.ok) throw new Error('Relaunch time service unavailable');
+        const payload = await response.json() as { serverNow?: number };
+        if (!mounted || !Number.isFinite(payload.serverNow)) return;
+        serverTimeAnchorRef.current = { serverMs: Number(payload.serverNow), perfMs: performance.now() };
+        setOwnerRelaunchServerReady(true);
+        setNowTimestamp(Number(payload.serverNow));
+      } catch {
+        // Owner remains locked until the server supplies an authoritative time.
+      }
+    };
+    void syncTime();
+    const poll = setInterval(syncTime, 15_000);
+    return () => { mounted = false; clearInterval(poll); };
+  }, []);
 
   const hydrateAuthenticatedOwnerLocalState = useCallback((cloudUserId?: string | null) => {
     const ownerState = loadRoleStateSync('owner');
@@ -559,44 +591,68 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Keep live second tick
   useEffect(() => {
     const interval = setInterval(() => {
-      setNowTimestamp(Date.now());
+      const anchor = serverTimeAnchorRef.current;
+      if (stateRef.current.role === 'owner') {
+        if (anchor) setNowTimestamp(anchor.serverMs + Math.max(0, performance.now() - anchor.perfMs));
+      } else {
+        setNowTimestamp(Date.now());
+      }
     }, 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Strict real-clock IST lock status (identical for Owner & Guest, cannot be bypassed by TEST MODE)
+  // Owner launch time comes from the server; Guest retains its existing schedule.
   const isPreparationLocked = useMemo(() => {
+    if (state.role === 'owner') return !ownerRelaunchServerReady || nowTimestamp < OWNER_RELAUNCH_START_MS;
     return nowTimestamp < START_DATE_MS;
-  }, [nowTimestamp]);
+  }, [state.role, ownerRelaunchServerReady, nowTimestamp]);
+
+  const ownerRelaunchTransitionReady = state.role !== 'owner' || isBeforeOwnerRelaunch(nowTimestamp) || state.preparationCycleId === OWNER_RELAUNCH_CYCLE_ID;
+
+  useEffect(() => {
+    if (!state.isAuthenticated || state.role !== 'owner' || !ownerRelaunchServerReady || nowTimestamp < OWNER_RELAUNCH_START_MS) return;
+    if (state.preparationCycleId === OWNER_RELAUNCH_CYCLE_ID) return;
+    setState((prev) => createOwnerRelaunchCycle(prev, nowTimestamp));
+    setSelectedDayNumberState(1);
+    setSelectedDsaDayState(1);
+    setSelectedAzureDayState(1);
+    setAiResourcesTarget(null);
+  }, [state.isAuthenticated, state.role, state.preparationCycleId, ownerRelaunchServerReady, nowTimestamp]);
 
   const lockTimeRemaining = useMemo(() => {
-    const diff = Math.max(0, START_DATE_MS - nowTimestamp);
+    const target = state.role === 'owner' ? OWNER_RELAUNCH_START_MS : START_DATE_MS;
+    const diff = Math.max(0, target - nowTimestamp);
     const seconds = Math.floor((diff / 1000) % 60);
     const minutes = Math.floor((diff / (1000 * 60)) % 60);
     const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     return { days, hours, minutes, seconds, totalMs: diff };
-  }, [nowTimestamp]);
+  }, [state.role, nowTimestamp]);
 
   // Current schedule day in Asia/Kolkata (Main: 1..180, Track: 1..100)
   const currentDayNumber = useMemo(() => {
-    return getCurrentIstScheduleDay(nowTimestamp, MAIN_TRACK_MAX_DAYS);
-  }, [nowTimestamp]);
+    return getCurrentIstScheduleDay(nowTimestamp, MAIN_TRACK_MAX_DAYS, state.role === 'owner' ? OWNER_RELAUNCH_START_ISO_IST : DAILY_PREPARATION_START_ISO_IST);
+  }, [nowTimestamp, state.role]);
 
   const currentTrackDayNumber = useMemo(() => {
-    return getCurrentIstScheduleDay(nowTimestamp, SUB_TRACK_MAX_DAYS);
-  }, [nowTimestamp]);
+    return getCurrentIstScheduleDay(nowTimestamp, SUB_TRACK_MAX_DAYS, state.role === 'owner' ? OWNER_RELAUNCH_START_ISO_IST : DAILY_PREPARATION_START_ISO_IST);
+  }, [nowTimestamp, state.role]);
 
   const currentDaySchedule = useMemo(() => {
-    return ALL_180_DAYS[currentDayNumber - 1] || ALL_180_DAYS[0];
-  }, [currentDayNumber]);
+    const schedule = ALL_180_DAYS[currentDayNumber - 1] || ALL_180_DAYS[0];
+    if (state.role !== 'owner') return schedule;
+    const shifted = new Date(new Date(schedule.isoDate + 'T00:00:00Z').getTime() + 7 * 86_400_000);
+    const isoDate = shifted.toISOString().slice(0, 10);
+    const dateString = shifted.toLocaleDateString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric' });
+    return { ...schedule, isoDate, dateString };
+  }, [currentDayNumber, state.role]);
 
   const isSaturdayToday = useMemo(() => {
-    if (nowTimestamp < START_DATE_MS) return false;
+    if (nowTimestamp < (state.role === 'owner' ? OWNER_RELAUNCH_START_MS : START_DATE_MS)) return false;
     const date = new Date(nowTimestamp);
     const weekday = date.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', weekday: 'long' });
     return weekday === 'Saturday';
-  }, [nowTimestamp]);
+  }, [nowTimestamp, state.role]);
 
   // Navigation & auth guard: all sections remain accessible whenever authenticated
   useEffect(() => {
@@ -726,23 +782,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const isDayUnlocked = useCallback(
     (dayNumber: number): boolean => {
-      return isDayUnlockedByIstClock(dayNumber, nowTimestamp, MAIN_TRACK_MAX_DAYS);
+      return isDayUnlockedByIstClock(dayNumber, nowTimestamp, MAIN_TRACK_MAX_DAYS, preparationStartForRole(state.role));
     },
-    [nowTimestamp]
+    [nowTimestamp, state.role]
   );
 
   const isTrackDayUnlocked = useCallback(
     (track: TrackId, dayNumber: number): boolean => {
       const maxDay = track === 'main' ? MAIN_TRACK_MAX_DAYS : SUB_TRACK_MAX_DAYS;
-      return isDayUnlockedByIstClock(dayNumber, nowTimestamp, maxDay);
+      return isDayUnlockedByIstClock(dayNumber, nowTimestamp, maxDay, preparationStartForRole(state.role));
     },
-    [nowTimestamp]
+    [nowTimestamp, state.role]
   );
 
   // Main Plan Status calculation (strict real-clock IST locking for both Owner & Guest)
   const getDayStatus = useCallback(
     (dayNum: number): DayStatus => {
-      if (!isDayUnlockedByIstClock(dayNum, nowTimestamp, MAIN_TRACK_MAX_DAYS)) {
+      if (!isDayUnlockedByIstClock(dayNum, nowTimestamp, MAIN_TRACK_MAX_DAYS, preparationStartForRole(state.role))) {
         return 'locked';
       }
 
@@ -764,7 +820,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return 'not-started';
     },
-    [nowTimestamp, currentDayNumber, getDayTaskCompletion, state.studyTimeSeconds]
+    [nowTimestamp, currentDayNumber, getDayTaskCompletion, state.studyTimeSeconds, state.role]
   );
 
   // Unified per-track task completion helper
@@ -800,7 +856,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return getDayStatus(dayNum);
       }
 
-      if (!isDayUnlockedByIstClock(dayNum, nowTimestamp, SUB_TRACK_MAX_DAYS)) {
+      if (!isDayUnlockedByIstClock(dayNum, nowTimestamp, SUB_TRACK_MAX_DAYS, preparationStartForRole(state.role))) {
         return 'locked';
       }
 
@@ -825,6 +881,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [
       getDayStatus,
       nowTimestamp,
+      state.role,
       currentTrackDayNumber,
       getTrackDayTaskCompletion,
       state.dsaProgress,
@@ -1129,7 +1186,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Main Plan Toggle task completion (guarded by strict real IST clock)
   const toggleTaskCompletion = useCallback((dayNum: number, taskId: string) => {
-    if (!isDayUnlockedByIstClock(dayNum, Date.now(), MAIN_TRACK_MAX_DAYS)) return;
+    if (!isDayUnlockedByIstClock(dayNum, getClockNow(), MAIN_TRACK_MAX_DAYS, preparationStartForRole(stateRef.current.role))) return;
 
     setState(prev => {
       const isCurrentlyDone = !!prev.completedTasks[taskId];
@@ -1164,7 +1221,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   const saveDayNotes = useCallback((dayNum: number, notes: string) => {
-    if (!isDayUnlockedByIstClock(dayNum, Date.now(), MAIN_TRACK_MAX_DAYS)) return;
+    if (!isDayUnlockedByIstClock(dayNum, getClockNow(), MAIN_TRACK_MAX_DAYS, preparationStartForRole(stateRef.current.role))) return;
 
     setState(prev => ({
       ...prev,
@@ -1178,21 +1235,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const isAssessmentWeekUnlocked = useCallback(
     (weekNumber: number): boolean => {
-      return isAssessmentUnlockedByIstClock(weekNumber, nowTimestamp);
+      return isAssessmentUnlockedByIstClock(weekNumber, nowTimestamp, preparationStartForRole(state.role));
     },
-    [nowTimestamp]
+    [nowTimestamp, state.role]
   );
 
   const startAssessmentAttempt = useCallback(
     (weekNumber: number): { success: boolean; reason?: string } => {
-      const nowMs = Date.now();
-      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) {
+      const nowMs = getClockNow();
+      const startIso = preparationStartForRole(stateRef.current.role);
+      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs, startIso)) {
         return {
           success: false,
           reason: 'This assessment is locked until 00:00 IST on its scheduled unlock date.'
         };
       }
-      const unlocked = getUnlockedAssessmentForWeek(weekNumber, nowMs);
+      const unlocked = getUnlockedAssessmentForWeek(weekNumber, nowMs, startIso);
       if (!unlocked) {
         return { success: false, reason: 'Assessment data is unavailable.' };
       }
@@ -1224,13 +1282,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return { success: true };
     },
-    []
+    [getClockNow]
   );
 
   const saveAssessmentDraftAnswer = useCallback(
     (weekNumber: number, questionId: string, value: string | number) => {
-      const nowMs = Date.now();
-      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) return;
+      const nowMs = getClockNow();
+      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs, preparationStartForRole(stateRef.current.role))) return;
 
       setState(prev => {
         const attempt = prev.activeAssessmentAttempt;
@@ -1248,13 +1306,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       });
     },
-    []
+    [getClockNow]
   );
 
   const updateAssessmentAttemptElapsed = useCallback(
     (weekNumber: number, elapsedSeconds: number) => {
-      const nowMs = Date.now();
-      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) return;
+      const nowMs = getClockNow();
+      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs, preparationStartForRole(stateRef.current.role))) return;
 
       setState(prev => {
         const attempt = prev.activeAssessmentAttempt;
@@ -1268,7 +1326,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         };
       });
     },
-    []
+    [getClockNow]
   );
 
   const cancelAssessmentAttempt = useCallback((weekNumber?: number) => {
@@ -1286,13 +1344,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const submitAssessment = useCallback(
     (submission: AssessmentSubmission): boolean => {
-      const nowMs = Date.now();
+      const nowMs = getClockNow();
       const week = submission.weekNumber;
-      if (!isAssessmentUnlockedByIstClock(week, nowMs)) {
+      const startIso = preparationStartForRole(stateRef.current.role);
+      if (!isAssessmentUnlockedByIstClock(week, nowMs, startIso)) {
         return false;
       }
 
-      const unlocked = getUnlockedAssessmentForWeek(week, nowMs);
+      const unlocked = getUnlockedAssessmentForWeek(week, nowMs, startIso);
       if (!unlocked) {
         return false;
       }
@@ -1336,7 +1395,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return true;
     },
-    [currentDayNumber]
+    [currentDayNumber, getClockNow]
   );
 
   const updateAssessmentRubricReview = useCallback(
@@ -1345,11 +1404,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       selfReviews: Record<string, WrittenReviewStatus>,
       reviewNotes?: WeeklyReviewNotes
     ): boolean => {
-      const nowMs = Date.now();
-      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) {
+      const nowMs = getClockNow();
+      const startIso = preparationStartForRole(stateRef.current.role);
+      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs, startIso)) {
         return false;
       }
-      const unlocked = getUnlockedAssessmentForWeek(weekNumber, nowMs);
+      const unlocked = getUnlockedAssessmentForWeek(weekNumber, nowMs, startIso);
       if (!unlocked) return false;
 
       let updated = false;
@@ -1378,16 +1438,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return updated;
     },
-    []
+    [getClockNow]
   );
 
   const toggleAssessmentLeetCodeProblem = useCallback(
     (weekNumber: number, problemId: string): boolean => {
-      const nowMs = Date.now();
-      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) {
+      const nowMs = getClockNow();
+      const startIso = preparationStartForRole(stateRef.current.role);
+      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs, startIso)) {
         return false;
       }
-      const unlocked = getUnlockedAssessmentForWeek(weekNumber, nowMs);
+      const unlocked = getUnlockedAssessmentForWeek(weekNumber, nowMs, startIso);
       if (!unlocked || !unlocked.leetcodeProblems.some(p => p.id === problemId)) {
         return false;
       }
@@ -1410,16 +1471,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return true;
     },
-    []
+    [getClockNow]
   );
 
   const saveAssessmentLeetCodeNotes = useCallback(
     (weekNumber: number, problemId: string, notes: string): boolean => {
-      const nowMs = Date.now();
-      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) {
+      const nowMs = getClockNow();
+      const startIso = preparationStartForRole(stateRef.current.role);
+      if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs, startIso)) {
         return false;
       }
-      const unlocked = getUnlockedAssessmentForWeek(weekNumber, nowMs);
+      const unlocked = getUnlockedAssessmentForWeek(weekNumber, nowMs, startIso);
       if (!unlocked || !unlocked.leetcodeProblems.some(p => p.id === problemId)) {
         return false;
       }
@@ -1441,13 +1503,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       return true;
     },
-    []
+    [getClockNow]
   );
 
   // DSA & Azure Independent Track Actions (guarded by strict real IST clock)
   const toggleTrackTaskCompletion = useCallback(
     (track: 'dsa' | 'azure', dayNum: number, taskId: string) => {
-      if (!isDayUnlockedByIstClock(dayNum, Date.now(), SUB_TRACK_MAX_DAYS)) return;
+      if (!isDayUnlockedByIstClock(dayNum, getClockNow(), SUB_TRACK_MAX_DAYS, preparationStartForRole(stateRef.current.role))) return;
 
       const days = track === 'dsa' ? DSA_100_DAYS : AZURE_100_DAYS;
       const schedule = days[dayNum - 1];
@@ -1482,7 +1544,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const saveTrackDayNotes = useCallback(
     (track: 'dsa' | 'azure', dayNum: number, notes: string) => {
-      if (!isDayUnlockedByIstClock(dayNum, Date.now(), SUB_TRACK_MAX_DAYS)) return;
+      if (!isDayUnlockedByIstClock(dayNum, getClockNow(), SUB_TRACK_MAX_DAYS, preparationStartForRole(stateRef.current.role))) return;
 
       setState(prev => {
         const currentTrack = track === 'dsa' ? prev.dsaProgress : prev.azureProgress;
@@ -1509,7 +1571,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       record: Omit<TrackRevisionRecord, 'weekNumber' | 'completedAt'>
     ) => {
       const weekFirstDay = Math.max(1, (weekNumber - 1) * 7 + 1);
-      if (!isDayUnlockedByIstClock(weekFirstDay, Date.now(), SUB_TRACK_MAX_DAYS)) return;
+      if (!isDayUnlockedByIstClock(weekFirstDay, getClockNow(), SUB_TRACK_MAX_DAYS, preparationStartForRole(stateRef.current.role))) return;
 
       const fullRecord: TrackRevisionRecord = {
         ...record,
@@ -1544,7 +1606,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       trackId: TrackId = 'main'
     ) => {
       const maxDay = trackId === 'main' ? MAIN_TRACK_MAX_DAYS : SUB_TRACK_MAX_DAYS;
-      if (!isDayUnlockedByIstClock(dayNumber, Date.now(), maxDay)) return;
+    if (!isDayUnlockedByIstClock(dayNumber, getClockNow(), maxDay, preparationStartForRole(stateRef.current.role))) return;
 
       let targetSeconds = (durationMinutes || 240) * 60;
       if (!durationMinutes) {
@@ -2095,6 +2157,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       saveStatus,
       nowTimestamp,
       isPreparationLocked,
+      ownerRelaunchServerReady,
+      ownerRelaunchTransitionReady,
       lockTimeRemaining,
       currentDayNumber,
       currentTrackDayNumber,
@@ -2173,6 +2237,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       saveStatus,
       nowTimestamp,
       isPreparationLocked,
+      ownerRelaunchServerReady,
+      ownerRelaunchTransitionReady,
       lockTimeRemaining,
       currentDayNumber,
       currentTrackDayNumber,

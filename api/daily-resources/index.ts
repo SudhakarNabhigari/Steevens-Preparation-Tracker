@@ -2,7 +2,8 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { TrackId } from '../../src/types/index.ts';
 import { getDailyResourcesDashboard } from '../../server/dailyResourcesService.ts';
 import { applyApiSecurityAndCorsHeaders } from '../../server/httpCors.ts';
-import { isTrackDayCurrentlyUnlockedCanonical } from '../../supabase/functions/daily-learning-resources/pipeline.ts';
+import { verifyOwnerAuthHeader } from '../../server/auth.ts';
+import { isTrackDayCurrentlyUnlockedCanonical, LEGACY_GUEST_START_DATE_IST } from '../../supabase/functions/daily-learning-resources/pipeline.ts';
 
 function isValidTrackId(value: unknown): value is TrackId {
   return value === 'main' || value === 'dsa' || value === 'azure';
@@ -27,6 +28,12 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
     const reqUrl = new URL(req.url || '/api/daily-resources', 'https://localhost');
     const rawTrack = reqUrl.searchParams.get('track') || undefined;
     const rawDay = reqUrl.searchParams.get('day');
+    const role = reqUrl.searchParams.get('role') === 'guest' ? 'guest' : 'owner';
+    if (role === 'owner') {
+      const auth = await verifyOwnerAuthHeader(req.headers.authorization);
+      if (!auth.authorized) return sendJson(res, auth.status, { error: auth.error });
+    }
+    const scheduleStart = role === 'guest' ? LEGACY_GUEST_START_DATE_IST : undefined;
     const dayParam = rawDay !== null ? Number(rawDay) : undefined;
 
     if (rawTrack !== undefined && !isValidTrackId(rawTrack)) {
@@ -41,7 +48,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
       if (!Number.isInteger(dayParam) || dayParam < 1) {
         return sendJson(res, 400, { error: 'Invalid day query parameter.' });
       }
-      if (!isTrackDayCurrentlyUnlockedCanonical(validatedTrack, dayParam)) {
+      if (!isTrackDayCurrentlyUnlockedCanonical(validatedTrack, dayParam, Date.now(), scheduleStart)) {
         return sendJson(res, 403, {
           error: `Day ${dayParam} of ${validatedTrack.toUpperCase()} is locked until 00:00 IST on its scheduled date.`
         });
@@ -50,7 +57,8 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
     const payload = await getDailyResourcesDashboard({
       track: validatedTrack,
-      day: dayParam
+      day: dayParam,
+      role
     });
     return sendJson(res, 200, payload);
   } catch (err) {

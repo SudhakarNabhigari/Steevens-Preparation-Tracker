@@ -4,7 +4,8 @@ import { ALL_180_DAYS } from '../data/syllabus';
 import { DSA_TOTAL_PLANNED_HOURS } from '../data/dsaSyllabus';
 import { AZURE_TOTAL_PLANNED_HOURS } from '../data/azureSyllabus';
 import { TrackDayPickerModal } from './TrackDayPickerModal';
-import { getDayLockStatus, MAIN_TRACK_MAX_DAYS } from '../utils/dailyLock';
+import { DAILY_PREPARATION_START_ISO_IST, getDayLockStatus, MAIN_TRACK_MAX_DAYS } from '../utils/dailyLock';
+import { OWNER_RELAUNCH_START_ISO_IST } from '../utils/relaunch';
 import {
   OverallProgressBar,
   CompletionTrajectoryChart,
@@ -24,6 +25,7 @@ import {
 export const HomeDashboard: React.FC = () => {
   const {
     state,
+    userRole,
     nowTimestamp,
     currentDayNumber,
     currentDaySchedule,
@@ -41,7 +43,7 @@ export const HomeDashboard: React.FC = () => {
   const resumeDay = state.lastActiveDayNumber || currentDayNumber || 1;
   const resumeSchedule = ALL_180_DAYS[resumeDay - 1] || ALL_180_DAYS[0];
   const isResumeUnlocked = isDayUnlocked(resumeDay);
-  const resumeLockStatus = getDayLockStatus(resumeDay, nowTimestamp, MAIN_TRACK_MAX_DAYS);
+  const resumeLockStatus = getDayLockStatus(resumeDay, nowTimestamp, MAIN_TRACK_MAX_DAYS, userRole === 'owner' ? OWNER_RELAUNCH_START_ISO_IST : DAILY_PREPARATION_START_ISO_IST);
 
   // Main Plan metric counts
   let completedDaysCount = 0;
@@ -175,7 +177,7 @@ export const HomeDashboard: React.FC = () => {
           </p>
         </div>
         <div className="text-xs font-mono text-[#5A5650]">
-          Main: 16 Nov 2026 – 14 May 2027 · DSA & Azure: 16 Nov 2026 – 23 Feb 2027
+          {userRole === 'owner' ? 'Main: 23 Nov 2026 – 21 May 2027 · DSA & Azure: 23 Nov 2026 – 02 Mar 2027' : 'Main: 16 Nov 2026 – 14 May 2027 · DSA & Azure: 16 Nov 2026 – 23 Feb 2027'}
         </div>
       </div>
 

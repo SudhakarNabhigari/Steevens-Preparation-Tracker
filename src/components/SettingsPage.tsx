@@ -407,7 +407,7 @@ export const SettingsPage: React.FC = () => {
 
           <div className="p-3.5 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl">
             <span className="text-[#78716C] font-semibold block mb-1">Preparation Window</span>
-            <span className="font-mono font-bold text-[#292929]">16 Nov 2026 – 14 May 2027</span>
+            <span className="font-mono font-bold text-[#292929]">{isOwner ? '23 Nov 2026 – 21 May 2027' : '16 Nov 2026 – 14 May 2027'}</span>
             <span className="text-[10px] text-[#78716C] block mt-1">180 Consecutive Days of Structured Learning</span>
           </div>
         </div>

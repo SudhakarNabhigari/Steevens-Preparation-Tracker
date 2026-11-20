@@ -8,7 +8,21 @@ import {
   type SharedTrackId
 } from './catalogData.ts';
 
-export const START_DATE_IST = '2026-11-16T00:00:00+05:30';
+export const START_DATE_IST = '2026-11-23T00:00:00+05:30';
+export const LEGACY_GUEST_START_DATE_IST = '2026-11-16T00:00:00+05:30';
+export const APPROVED_CODING_CHANNELS = [
+  { handle: '@SwaroopTalks', channelId: 'UCjO2a5PrUrad7sA_mBXvklw' },
+  { handle: '@codewithswaroop', channelId: 'UCfIrO-HaaLeXBL46Jug242g' },
+  { handle: '@JennyslecturesCSIT', channelId: 'UCM-yUTYGmrNvKOCcAl21g3w' },
+  { handle: '@SwaroopVITB', channelId: 'UCmFUoPicoxuJAuR2NfNdQGA' },
+  { handle: '@SudhakarAtchala', channelId: 'UCDxNoaHOj2l2bFrHgCkg6Zw' },
+  { handle: '@takeUforward', channelId: 'UCJskGeByzRRSvmOyZOz61ig' }
+] as const;
+export const APPROVED_AZURE_CHANNELS = [
+  { channelId: 'UC0m-80FnNY2Qb7obvTL_2fA', channelName: 'Microsoft Azure' },
+  { channelId: 'UCFs5990vNpA2C2ijzgiJ59Q', channelName: 'Microsoft Learn' },
+  { channelId: 'UCpIn7ox7j7bH_OFj7tYouOQ', channelName: "John Savill's Technical Training" }
+] as const;
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const MAIN_TRACK_MAX_DAYS = 180;
 export const SUB_TRACK_MAX_DAYS = 100;
@@ -62,6 +76,7 @@ export interface CanonicalYouTubeResource {
   channelName: string;
   url: string;
   videoId?: string;
+  channelId?: string;
   thumbnailUrl?: string;
   topicCovered: string;
   explanation: string;
@@ -116,6 +131,43 @@ export interface CanonicalTrackDailyResources {
   modelUsed?: string;
   generatedAt: string;
   updatedAt: string;
+}
+
+/**
+ * A track is fully updated when its required learning resources are present
+ * and verified. Gemini enrichment is optional and its provider status remains
+ * visible separately; a Gemini outage alone must not mark usable resources as
+ * a partial refresh. Missing/unverified docs, exercises, videos, or DSA slots
+ * still keep the track partial.
+ */
+export function hasCompleteRequiredTrackResources(resources: Pick<
+  CanonicalTrackDailyResources,
+  | 'trackId'
+  | 'topicExplanation'
+  | 'learningObjectives'
+  | 'officialDocs'
+  | 'practicalExercises'
+  | 'youtubeTutorials'
+  | 'youtubeProviderStatus'
+  | 'leetcodeQuestions'
+>): boolean {
+  const requiredContentPresent =
+    Boolean(resources.topicExplanation.trim()) &&
+    resources.learningObjectives.length > 0 &&
+    resources.officialDocs.length > 0 &&
+    resources.officialDocs.every((doc) => doc.isVerifiedUrl) &&
+    resources.practicalExercises.length > 0 &&
+    resources.practicalExercises.every((exercise) => exercise.isVerifiedUrl);
+  const verifiedVideosPresent =
+    resources.youtubeProviderStatus === 'youtube_api_verified' &&
+    resources.youtubeTutorials.length > 0 &&
+    resources.youtubeTutorials.every((video) => video.isVerifiedVideo && video.linkKind === 'verified_video');
+  const dsaSlotsValid =
+    resources.trackId !== 'dsa' ||
+    (resources.leetcodeQuestions.length === 3 &&
+      resources.leetcodeQuestions.every((question) => question.available && question.isVerified));
+
+  return requiredContentPresent && verifiedVideosPresent && dsaSlotsValid;
 }
 
 export interface CanonicalAutomationStatus {
@@ -261,9 +313,10 @@ export function verifyCronRequest(
 
 export function getUnlockedDayCountByIstClock(
   nowMs: number = Date.now(),
-  maxDays: number = MAIN_TRACK_MAX_DAYS
+  maxDays: number = MAIN_TRACK_MAX_DAYS,
+  startDateIsoIst: string = START_DATE_IST
 ): number {
-  const startMs = new Date(START_DATE_IST).getTime();
+  const startMs = new Date(startDateIsoIst).getTime();
   if (nowMs < startMs) return 0;
   const elapsedDays = Math.floor((nowMs - startMs) / DAY_MS) + 1;
   return Math.min(maxDays, Math.max(1, elapsedDays));
@@ -272,15 +325,16 @@ export function getUnlockedDayCountByIstClock(
 export function isTrackDayCurrentlyUnlockedCanonical(
   trackId: SharedTrackId,
   dayNumber: number,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  startDateIsoIst: string = START_DATE_IST
 ): boolean {
   if (!Number.isInteger(dayNumber) || dayNumber < 1) return false;
   const maxDays = trackId === 'main' ? MAIN_TRACK_MAX_DAYS : SUB_TRACK_MAX_DAYS;
   if (dayNumber > maxDays) return false;
-  return dayNumber <= getUnlockedDayCountByIstClock(nowMs, maxDays);
+  return dayNumber <= getUnlockedDayCountByIstClock(nowMs, maxDays, startDateIsoIst);
 }
 
-export function getIstScheduleSnapshotCanonical(nowMs: number = Date.now()): IstScheduleSnapshot {
+export function getIstScheduleSnapshotCanonical(nowMs: number = Date.now(), startDateIsoIst: string = START_DATE_IST): IstScheduleSnapshot {
   const dateObj = new Date(nowMs);
   const istParts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Kolkata',
@@ -309,9 +363,9 @@ export function getIstScheduleSnapshotCanonical(nowMs: number = Date.now()): Ist
     year: 'numeric'
   });
 
-  const mainUnlocked = getUnlockedDayCountByIstClock(nowMs, MAIN_TRACK_MAX_DAYS);
-  const dsaUnlocked = getUnlockedDayCountByIstClock(nowMs, SUB_TRACK_MAX_DAYS);
-  const azureUnlocked = getUnlockedDayCountByIstClock(nowMs, SUB_TRACK_MAX_DAYS);
+  const mainUnlocked = getUnlockedDayCountByIstClock(nowMs, MAIN_TRACK_MAX_DAYS, startDateIsoIst);
+  const dsaUnlocked = getUnlockedDayCountByIstClock(nowMs, SUB_TRACK_MAX_DAYS, startDateIsoIst);
+  const azureUnlocked = getUnlockedDayCountByIstClock(nowMs, SUB_TRACK_MAX_DAYS, startDateIsoIst);
 
   return {
     istDate,
@@ -325,6 +379,18 @@ export function getIstScheduleSnapshotCanonical(nowMs: number = Date.now()): Ist
       dsa: dsaUnlocked,
       azure: azureUnlocked
     }
+  };
+}
+
+function getCycleCurriculumContext(trackId: SharedTrackId, dayNumber: number, startDateIsoIst: string = START_DATE_IST): SharedCurriculumDayContext | null {
+  const context = getSharedCurriculumDayContext(trackId, dayNumber);
+  if (!context) return null;
+  const date = new Date(new Date(startDateIsoIst).getTime() + (dayNumber - 1) * DAY_MS);
+  return {
+    ...context,
+    isoDate: date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }),
+    dateLabel: date.toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' }),
+    dayOfWeek: date.toLocaleDateString('en-US', { timeZone: 'Asia/Kolkata', weekday: 'long' })
   };
 }
 
@@ -446,6 +512,7 @@ export interface YouTubeDiscoveryResult {
 
 interface YouTubeSearchItem {
   id?: { videoId?: string };
+  snippet?: { channelId?: string };
 }
 
 interface YouTubeVideoItem {
@@ -453,6 +520,7 @@ interface YouTubeVideoItem {
   snippet?: {
     title?: string;
     channelTitle?: string;
+    channelId?: string;
     description?: string;
     defaultAudioLanguage?: string;
     defaultLanguage?: string;
@@ -464,6 +532,7 @@ interface YouTubeVideoItem {
   };
   contentDetails?: { duration?: string };
   status?: { privacyStatus?: string };
+  statistics?: { viewCount?: string };
 }
 
 function parseIsoDurationToSeconds(isoDuration?: string): number {
@@ -509,64 +578,448 @@ function buildTrackQueryTerms(ctx: SharedCurriculumDayContext): string[] {
   ];
 }
 
-export function buildSearchFallbackTutorials(
-  ctx: SharedCurriculumDayContext
-): CanonicalYouTubeResource[] {
-  const prefixLabel =
-    ctx.trackId === 'dsa'
-      ? 'C++ DSA'
-      : ctx.trackId === 'azure'
-      ? 'Microsoft Azure'
-      : 'AI/RAG Engineering';
+export function isCodingRelatedTopic(ctx: SharedCurriculumDayContext): boolean {
+  if (ctx.trackId === 'dsa') return true;
+  if (ctx.trackId === 'azure') return false;
+  return /\b(code|coding|program|python|javascript|typescript|sql|algorithm|data structure|fastapi|react|api|database|backend|frontend|debugging)\b/i
+    .test([ctx.topic, ...ctx.objectives, ctx.practicalWork].join(' '));
+}
 
-  const queries = buildTrackQueryTerms(ctx);
-  const angles = [
-    {
-      label: 'Core Concepts & Walkthrough',
-      topicCovered: `${ctx.topic} — core definitions, concepts, and beginner-friendly examples (${ctx.objectives[0] || ctx.topic}).`,
-      whyUseful: `Builds clear conceptual understanding of "${ctx.topic}" before doing Day ${ctx.dayNumber} hands-on work.`
-    },
-    {
-      label: 'Practical Implementation & Examples',
-      topicCovered: `${ctx.topic} — step-by-step practical coding / lab walkthrough aligned with: ${ctx.practicalWork.slice(0, 120)}`,
-      whyUseful: `Demonstrates practical execution patterns needed to complete today's deliverable (${ctx.deliverable.slice(0, 90)}).`
-    },
-    {
-      label: 'Common Pitfalls & Edge Cases',
-      topicCovered: `${ctx.topic} — debugging mistakes, edge cases, and interview/production checks.`,
-      whyUseful: `Helps catch common bugs and verify understanding of "${ctx.topic}" cleanly.`
-    }
-  ];
+export function buildSearchFallbackTutorials(_ctx: SharedCurriculumDayContext): CanonicalYouTubeResource[] {
+  return [];
+}
 
-  return angles.map((angle, idx) => {
-    const query = queries[idx] || `${prefixLabel} ${ctx.topic} tutorial`;
-    return {
-      id: `yt_${ctx.trackId}_d${ctx.dayNumber}_search_${idx + 1}`,
-      title: `YouTube Search: ${ctx.topic} (${angle.label})`,
-      channelName: 'YouTube Curated Search Link (Set YOUTUBE_API_KEY for verified direct videos)',
-      url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
-      topicCovered: angle.topicCovered,
-      explanation: `Curated YouTube search for verified tutorials covering "${ctx.topic}" (${prefixLabel} Day ${ctx.dayNumber}).`,
-      whyUseful: angle.whyUseful,
-      language: 'en',
-      isVerifiedVideo: false,
-      linkKind: 'youtube_search_fallback'
-    };
+function buildLegacyGuestSearchFallbackTutorials(ctx: SharedCurriculumDayContext): CanonicalYouTubeResource[] {
+  if (isCodingRelatedTopic(ctx)) return [];
+  return buildTrackQueryTerms(ctx).map((query, index) => ({
+    id: `yt_${ctx.trackId}_d${ctx.dayNumber}_guest_search_${index + 1}`,
+    title: `YouTube Search: ${ctx.topic}`,
+    channelName: 'YouTube topic search',
+    url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
+    topicCovered: ctx.topic,
+    explanation: `YouTube search results for ${ctx.topic}.`,
+    whyUseful: `Guest topic search link for ${ctx.topic}.`,
+    language: 'en',
+    isVerifiedVideo: false,
+    linkKind: 'youtube_search_fallback'
+  }));
+}
+
+async function discoverApprovedCodingTutorials(
+  ctx: SharedCurriculumDayContext,
+  apiKey: string,
+  fetchImpl: typeof fetch
+): Promise<YouTubeDiscoveryResult> {
+  const noSuitable = (statusNote: string, providerStatus: YouTubeDiscoveryResult['providerStatus'] = 'unavailable') => ({
+    tutorials: [], providerStatus, statusNote
   });
+  try {
+    const candidateIds: string[] = [];
+    for (const channel of APPROVED_CODING_CHANNELS) {
+      const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
+      searchUrl.searchParams.set('part', 'snippet');
+      searchUrl.searchParams.set('type', 'video');
+      searchUrl.searchParams.set('maxResults', '2');
+      searchUrl.searchParams.set('relevanceLanguage', 'en');
+      searchUrl.searchParams.set('safeSearch', 'strict');
+      searchUrl.searchParams.set('channelId', channel.channelId);
+      searchUrl.searchParams.set('q', `${ctx.topic} ${ctx.objectives.slice(0, 2).join(' ')}`);
+      searchUrl.searchParams.set('key', apiKey);
+      const searchResp = await fetchImpl(searchUrl.toString(), { signal: AbortSignal.timeout(8000) });
+      if (!searchResp.ok) {
+        const status = searchResp.status === 403 || searchResp.status === 429 ? 'search_fallback_quota' : 'unavailable';
+        return noSuitable(`No suitable video found. Approved channel search failed with HTTP ${searchResp.status}.`, status);
+      }
+      const searchJson = await searchResp.json() as { items?: YouTubeSearchItem[] };
+      candidateIds.push(...(searchJson.items || []).map((item) => item.id?.videoId || ''));
+    }
+    const uniqueIds = Array.from(new Set(candidateIds.filter((id) => /^[a-zA-Z0-9_-]{11}$/.test(id))));
+    if (uniqueIds.length === 0) return noSuitable('No suitable video found from the six verified approved coding channels.');
+
+    const videosUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
+    videosUrl.searchParams.set('part', 'snippet,contentDetails,status');
+    videosUrl.searchParams.set('id', uniqueIds.join(','));
+    videosUrl.searchParams.set('key', apiKey);
+    const videosResp = await fetchImpl(videosUrl.toString(), { signal: AbortSignal.timeout(8000) });
+    if (!videosResp.ok) return noSuitable(`No suitable video found. YouTube video verification returned HTTP ${videosResp.status}.`, videosResp.status === 403 || videosResp.status === 429 ? 'search_fallback_quota' : 'unavailable');
+    const videosJson = await videosResp.json() as { items?: YouTubeVideoItem[] };
+    const topicTerms = ctx.topic.toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length > 2);
+    const approved = (videosJson.items || []).filter((video) => {
+      const channelAllowed = APPROVED_CODING_CHANNELS.some((channel) => channel.channelId === video.snippet?.channelId);
+      const duration = parseIsoDurationToSeconds(video.contentDetails?.duration);
+      const searchable = `${video.snippet?.title || ''} ${video.snippet?.description || ''}`.toLowerCase();
+      return Boolean(
+        video.id && video.snippet?.title && video.snippet.channelTitle && channelAllowed &&
+        (!video.status?.privacyStatus || video.status.privacyStatus === 'public') &&
+        duration >= 120 && !/\bshorts?\b/i.test(video.snippet.title) &&
+        topicTerms.some((term) => searchable.includes(term))
+      );
+    });
+    const selected = approved.slice(0, 3);
+    if (selected.length === 0) return noSuitable('No suitable video found. No approved-channel result passed availability and topic checks.');
+    const tutorials: CanonicalYouTubeResource[] = selected.map((video, index) => {
+      const videoId = video.id!;
+      const thumb = video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.high?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+      return {
+        id: `yt_${ctx.trackId}_d${ctx.dayNumber}_${videoId}_${index + 1}`,
+        title: video.snippet!.title!,
+        channelName: video.snippet!.channelTitle!,
+        channelId: video.snippet!.channelId,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        videoId,
+        thumbnailUrl: isValidHttpsUrl(thumb) ? thumb : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        topicCovered: `${ctx.topic}: ${ctx.objectives[0] || ctx.topic}`,
+        explanation: (video.snippet?.description || `Video tutorial for ${ctx.topic}.`).replace(/\s+/g, ' ').slice(0, 160),
+        whyUseful: `Matches ${ctx.topic} for Day ${ctx.dayNumber} and comes from a verified approved coding channel.`,
+        duration: formatDurationSeconds(parseIsoDurationToSeconds(video.contentDetails?.duration)),
+        language: video.snippet?.defaultAudioLanguage || video.snippet?.defaultLanguage || 'en',
+        isVerifiedVideo: true,
+        linkKind: 'verified_video'
+      };
+    });
+    return { tutorials, providerStatus: 'youtube_api_verified', statusNote: `Verified ${tutorials.length} topic-matched public videos from approved coding channels.` };
+  } catch {
+    return noSuitable('No suitable video found because approved-channel verification could not complete.');
+  }
+}
+
+interface NonCodingSearchCandidate {
+  searchLanguage: 'te' | 'en';
+  searchChannelId?: string;
+}
+
+interface YouTubeChannelItem {
+  id?: string;
+  snippet?: { title?: string; description?: string };
+  statistics?: { subscriberCount?: string; videoCount?: string };
+}
+
+function getTopicTerms(topic: string): string[] {
+  const stopWords = new Set(['the', 'and', 'for', 'with', 'from', 'what', 'how', 'into', 'about', 'using', 'introduction', 'fundamentals']);
+  return topic.toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length > 2 && !stopWords.has(term));
+}
+
+function detectVideoLanguage(video: YouTubeVideoItem, searchLanguage: 'te' | 'en'): string {
+  const languageTag = (video.snippet?.defaultAudioLanguage || video.snippet?.defaultLanguage || '').toLowerCase();
+  if (languageTag.startsWith('te')) return 'te';
+  if (languageTag.startsWith('en')) return 'en';
+  const text = `${video.snippet?.title || ''} ${video.snippet?.description || ''}`;
+  if (/[\u0C00-\u0C7F]/.test(text)) return 'te';
+  const letters = text.match(/[a-z]/gi)?.length || 0;
+  const nonLatinLetters = text.match(/[^\x00-\x7F\s\p{P}\p{N}]/gu)?.length || 0;
+  if (letters > 8 && nonLatinLetters === 0) return searchLanguage;
+  return 'unknown';
+}
+
+function isEducationalChannel(channel: YouTubeChannelItem | undefined): boolean {
+  if (!channel?.id || !channel.snippet?.title) return false;
+  const description = channel.snippet.description || '';
+  const subscribers = Number(channel.statistics?.subscriberCount || 0);
+  const videos = Number(channel.statistics?.videoCount || 0);
+  const educational = /learn|learning|education|educational|training|tutorial|course|technology|cloud|certification|instructor|academy|engineering/i
+    .test(`${channel.snippet.title} ${description}`);
+  return educational && videos >= 10 && subscribers >= 5_000;
+}
+
+function isReusableVerifiedTutorial(ctx: SharedCurriculumDayContext, tutorial: CanonicalYouTubeResource, role: 'owner' | 'guest'): boolean {
+  if (role === 'guest' && !isCodingRelatedTopic(ctx)) {
+    return tutorial.isVerifiedVideo || tutorial.linkKind === 'youtube_search_fallback';
+  }
+  if (!tutorial.isVerifiedVideo || !tutorial.channelId || !tutorial.videoId || !isValidHttpsUrl(tutorial.url)) return false;
+  if (isCodingRelatedTopic(ctx)) {
+    return APPROVED_CODING_CHANNELS.some((channel) => channel.channelId === tutorial.channelId);
+  }
+  return (tutorial.language === 'te' || tutorial.language === 'en') && tutorial.whyUseful.startsWith('Verified non-coding video:');
+}
+
+function reusableTutorials(ctx: SharedCurriculumDayContext, tutorials: CanonicalYouTubeResource[], role: 'owner' | 'guest'): CanonicalYouTubeResource[] {
+  return tutorials.filter((tutorial) => isReusableVerifiedTutorial(ctx, tutorial, role));
+}
+
+function cachedVideoId(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    const candidate = parsed.hostname === 'youtu.be'
+      ? parsed.pathname.slice(1)
+      : parsed.searchParams.get('v') || parsed.pathname.match(/\/(?:shorts|embed)\/([^/?]+)/)?.[1];
+    return candidate && /^[a-zA-Z0-9_-]{11}$/.test(candidate) ? candidate : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Revalidate cached Owner recommendations against current YouTube metadata. The DB intentionally stores no channel_id. */
+export async function revalidateCachedYouTubeRows(
+  rows: SupabaseResourceRow[],
+  ctx: SharedCurriculumDayContext,
+  apiKey: string | undefined,
+  fetchImpl: typeof fetch,
+  role: 'owner' | 'guest'
+): Promise<SupabaseResourceRow[]> {
+  const youtubeRows = rows.filter((row) => row.resource_type === 'youtube');
+  if (role === 'guest') return youtubeRows;
+  if (!apiKey?.trim() || !youtubeRows.length) return [];
+
+  const idsByVideoId = new Map<string, SupabaseResourceRow[]>();
+  for (const row of youtubeRows) {
+    const videoId = cachedVideoId(row.url || '');
+    if (!videoId) continue;
+    idsByVideoId.set(videoId, [...(idsByVideoId.get(videoId) || []), row]);
+  }
+  const videoIds = [...idsByVideoId.keys()];
+  if (!videoIds.length) return [];
+
+  try {
+    const videosUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
+    videosUrl.searchParams.set('part', 'snippet,contentDetails,status');
+    videosUrl.searchParams.set('id', videoIds.join(','));
+    videosUrl.searchParams.set('key', apiKey.trim());
+    const videosResponse = await fetchImpl(videosUrl.toString(), { signal: AbortSignal.timeout(8000) });
+    if (!videosResponse.ok) return [];
+    const videos = (await videosResponse.json() as { items?: YouTubeVideoItem[] }).items || [];
+    const channelIds = [...new Set(videos.map((video) => video.snippet?.channelId).filter((id): id is string => Boolean(id)))];
+    if (!channelIds.length) return [];
+
+    const channelsUrl = new URL('https://www.googleapis.com/youtube/v3/channels');
+    channelsUrl.searchParams.set('part', 'snippet,statistics');
+    channelsUrl.searchParams.set('id', channelIds.join(','));
+    channelsUrl.searchParams.set('key', apiKey.trim());
+    const channelsResponse = await fetchImpl(channelsUrl.toString(), { signal: AbortSignal.timeout(8000) });
+    if (!channelsResponse.ok) return [];
+    const channelItems = (await channelsResponse.json() as { items?: YouTubeChannelItem[] }).items || [];
+    const channels = new Map(channelItems.filter((channel): channel is YouTubeChannelItem & { id: string } => Boolean(channel.id)).map((channel) => [channel.id, channel]));
+    const topicTerms = getTopicTerms(ctx.topic);
+
+    return videos.flatMap((video) => {
+      const channelId = video.snippet?.channelId;
+      const channel = channelId ? channels.get(channelId) : undefined;
+      const videoId = video.id;
+      if (!videoId || !channelId || !channel?.snippet?.title || video.status?.privacyStatus !== 'public') return [];
+      const title = video.snippet?.title?.trim() || '';
+      const text = `${title} ${video.snippet?.description || ''}`.toLowerCase();
+      const topicMatches = topicTerms.filter((term) => text.includes(term)).length;
+      if (!title || topicMatches < Math.min(2, topicTerms.length)) return [];
+
+      const coding = isCodingRelatedTopic(ctx);
+      const approvedCodingChannel = APPROVED_CODING_CHANNELS.some((approved) => approved.channelId === channelId);
+      const approvedAzureChannel = ctx.trackId === 'azure' && APPROVED_AZURE_CHANNELS.some((approved) => approved.channelId === channelId);
+      if (coding && !approvedCodingChannel) return [];
+      if (!coding && !approvedAzureChannel && !isEducationalChannel(channel)) return [];
+
+      const durationSeconds = parseIsoDurationToSeconds(video.contentDetails?.duration);
+      if (durationSeconds < 180 || /#?shorts?\b/i.test(title)) return [];
+      const matchingRows = idsByVideoId.get(videoId) || [];
+      const language = detectVideoLanguage(video, matchingRows[0]?.language === 'te' ? 'te' : 'en');
+      if (!coding && language !== 'te' && language !== 'en') return [];
+
+      return matchingRows.filter((row) => row.is_verified).map((row) => ({
+        ...row,
+        title,
+        channel_or_source: channel.snippet?.title || row.channel_or_source || '',
+        channel_id: channelId,
+        language
+      }));
+    });
+  } catch {
+    // Fail closed for Owner cached videos when current metadata cannot be verified.
+    return [];
+  }
+}
+
+async function discoverNonCodingTutorials(
+  ctx: SharedCurriculumDayContext,
+  apiKey: string,
+  fetchImpl: typeof fetch
+): Promise<YouTubeDiscoveryResult> {
+  const noSuitable = (statusNote = 'No suitable video found.') => ({
+    tutorials: [] as CanonicalYouTubeResource[],
+    providerStatus: 'unavailable' as const,
+    statusNote
+  });
+  try {
+    const searchQueries: Array<{ language: 'te' | 'en'; query: string; channelId?: string }> = [
+      { language: 'te', query: `${ctx.topic} ${ctx.objectives[0] || ''} Telugu explanation tutorial${ctx.trackId === 'azure' ? ' Azure' : ''}` }
+    ];
+    if (ctx.trackId === 'azure') {
+      for (const channel of APPROVED_AZURE_CHANNELS) {
+        searchQueries.push({
+          language: 'en',
+          query: `Azure ${ctx.topic} ${ctx.objectives[0] || ''} explanation tutorial`,
+          channelId: channel.channelId
+        });
+      }
+    } else {
+      searchQueries.push({
+        language: 'en',
+        query: `${ctx.topic} ${ctx.objectives[0] || ''} English explanation tutorial`
+      });
+    }
+
+    const candidates = new Map<string, NonCodingSearchCandidate[]>();
+    for (const search of searchQueries) {
+      const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
+      searchUrl.searchParams.set('part', 'snippet');
+      searchUrl.searchParams.set('type', 'video');
+      searchUrl.searchParams.set('maxResults', '6');
+      searchUrl.searchParams.set('relevanceLanguage', search.language);
+      searchUrl.searchParams.set('safeSearch', 'strict');
+      searchUrl.searchParams.set('q', search.query);
+      if (search.channelId) searchUrl.searchParams.set('channelId', search.channelId);
+      searchUrl.searchParams.set('key', apiKey);
+      const response = await fetchImpl(searchUrl.toString(), { signal: AbortSignal.timeout(8000) });
+      if (!response.ok) continue;
+      const payload = await response.json() as { items?: YouTubeSearchItem[] };
+      for (const item of payload.items || []) {
+        const id = item.id?.videoId;
+        if (!id || !/^[a-zA-Z0-9_-]{11}$/.test(id) || !item.snippet?.channelId) continue;
+        const existing = candidates.get(id) || [];
+        existing.push({ searchLanguage: search.language, searchChannelId: item.snippet.channelId });
+        candidates.set(id, existing);
+      }
+    }
+    const candidateIds = [...candidates.keys()];
+    if (!candidateIds.length) return noSuitable();
+
+    const detailsUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
+    detailsUrl.searchParams.set('part', 'snippet,contentDetails,status,statistics');
+    detailsUrl.searchParams.set('id', candidateIds.join(','));
+    detailsUrl.searchParams.set('key', apiKey);
+    const detailsResp = await fetchImpl(detailsUrl.toString(), { signal: AbortSignal.timeout(8000) });
+    if (!detailsResp.ok) return noSuitable();
+    const details = await detailsResp.json() as { items?: YouTubeVideoItem[] };
+    const channelIds = [...new Set((details.items || []).map((video) => video.snippet?.channelId).filter((id): id is string => Boolean(id)))];
+    if (!channelIds.length) return noSuitable();
+
+    const channelsUrl = new URL('https://www.googleapis.com/youtube/v3/channels');
+    channelsUrl.searchParams.set('part', 'snippet,statistics');
+    channelsUrl.searchParams.set('id', channelIds.join(','));
+    channelsUrl.searchParams.set('key', apiKey);
+    const channelsResp = await fetchImpl(channelsUrl.toString(), { signal: AbortSignal.timeout(8000) });
+    if (!channelsResp.ok) return noSuitable();
+    const channelPayload = await channelsResp.json() as { items?: YouTubeChannelItem[] };
+    const channels = new Map((channelPayload.items || []).filter((channel): channel is YouTubeChannelItem & { id: string } => Boolean(channel.id)).map((channel) => [channel.id, channel]));
+    const topicTerms = getTopicTerms(ctx.topic);
+
+    const verified = (details.items || []).flatMap((video) => {
+      const videoId = video.id;
+      const channelId = video.snippet?.channelId;
+      const title = video.snippet?.title?.trim();
+      const channel = channelId ? channels.get(channelId) : undefined;
+      const candidateSources = videoId ? candidates.get(videoId) || [] : [];
+      const exactSearchMatch = candidateSources.some((source) => source.searchChannelId === channelId);
+      const trustedAzureChannel = ctx.trackId === 'azure' && APPROVED_AZURE_CHANNELS.some((approved) => approved.channelId === channelId);
+      const trustedChannel = trustedAzureChannel || isEducationalChannel(channel);
+      const durationSeconds = parseIsoDurationToSeconds(video.contentDetails?.duration);
+      const searchableTitle = title?.toLowerCase() || '';
+      const searchableDescription = video.snippet?.description?.toLowerCase() || '';
+      const titleMatches = topicTerms.filter((term) => searchableTitle.includes(term));
+      const descriptionMatches = topicTerms.filter((term) => searchableDescription.includes(term));
+      const topicRelevant = titleMatches.length >= 1 && (topicTerms.length < 2 || titleMatches.length + descriptionMatches.length >= 2);
+      if (!videoId || !channelId || !title || !channel?.snippet?.title || !exactSearchMatch || !trustedChannel || !topicRelevant || durationSeconds < 180 || /#?shorts?\b/i.test(title) || video.status?.privacyStatus !== 'public') return [];
+      const source = candidateSources.find((candidate) => candidate.searchChannelId === channelId) || candidateSources[0]!;
+      const language = detectVideoLanguage(video, source.searchLanguage);
+      const languageRank = language === 'te' ? 0 : language === 'en' ? 1 : 2;
+      const channelRank = trustedAzureChannel ? 0 : 1;
+      const views = Number(video.statistics?.viewCount || 0);
+      const thumb = video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.high?.url || video.snippet?.thumbnails?.default?.url;
+      const tutorial: CanonicalYouTubeResource = {
+        id: `yt_${ctx.trackId}_d${ctx.dayNumber}_${videoId}`,
+        title,
+        channelName: channel.snippet.title,
+        channelId,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        videoId,
+        thumbnailUrl: thumb && isValidHttpsUrl(thumb) ? thumb : undefined,
+        topicCovered: ctx.topic,
+        explanation: (video.snippet?.description || `Verified video covering ${ctx.topic}.`).replace(/\s+/g, ' ').slice(0, 180),
+        whyUseful: `Verified non-coding video: public tutorial matched to ${ctx.topic}; language: ${language === 'unknown' ? 'not identified' : language === 'te' ? 'Telugu' : 'English'}.`,
+        duration: formatDurationSeconds(durationSeconds),
+        language,
+        isVerifiedVideo: true,
+        linkKind: 'verified_video' as const
+      };
+      return [{ tutorial, languageRank, channelRank, views, relevance: titleMatches.length + descriptionMatches.length }];
+    });
+
+    verified.sort((a, b) => a.languageRank - b.languageRank || a.channelRank - b.channelRank || b.relevance - a.relevance || b.views - a.views);
+    const selected = verified.slice(0, 3).map((item) => item.tutorial);
+    return selected.length
+      ? { tutorials: selected, providerStatus: 'youtube_api_verified', statusNote: `Verified ${selected.length} topic-matched public non-coding videos with channel and language checks.` }
+      : noSuitable();
+  } catch {
+    return noSuitable();
+  }
+}
+
+async function discoverLegacyGuestNonCodingTutorials(
+  ctx: SharedCurriculumDayContext,
+  apiKey: string,
+  fetchImpl: typeof fetch
+): Promise<YouTubeDiscoveryResult> {
+  const fallback = buildLegacyGuestSearchFallbackTutorials(ctx);
+  try {
+    const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
+    searchUrl.searchParams.set('part', 'snippet');
+    searchUrl.searchParams.set('type', 'video');
+    searchUrl.searchParams.set('maxResults', '8');
+    searchUrl.searchParams.set('relevanceLanguage', 'en');
+    searchUrl.searchParams.set('safeSearch', 'strict');
+    searchUrl.searchParams.set('q', buildTrackQueryTerms(ctx)[0]);
+    searchUrl.searchParams.set('key', apiKey);
+    const search = await fetchImpl(searchUrl.toString(), { signal: AbortSignal.timeout(8000) });
+    if (!search.ok) return { tutorials: fallback, providerStatus: 'search_fallback_quota', statusNote: 'YouTube lookup unavailable; showing existing Guest topic search links.' };
+    const payload = await search.json() as { items?: YouTubeSearchItem[] };
+    const ids = [...new Set((payload.items || []).map((item) => item.id?.videoId).filter((id): id is string => Boolean(id && /^[a-zA-Z0-9_-]{11}$/.test(id))))];
+    if (!ids.length) return { tutorials: fallback, providerStatus: 'search_fallback_quota', statusNote: 'No verified direct videos returned; showing existing Guest topic search links.' };
+    const detailsUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
+    detailsUrl.searchParams.set('part', 'snippet,contentDetails,status');
+    detailsUrl.searchParams.set('id', ids.join(','));
+    detailsUrl.searchParams.set('key', apiKey);
+    const details = await fetchImpl(detailsUrl.toString(), { signal: AbortSignal.timeout(8000) });
+    if (!details.ok) return { tutorials: fallback, providerStatus: 'search_fallback_quota', statusNote: 'YouTube details unavailable; showing existing Guest topic search links.' };
+    const videos = await details.json() as { items?: YouTubeVideoItem[] };
+    const tutorials = (videos.items || []).filter((video) => video.id && video.snippet?.title && video.snippet.channelTitle && (!video.status?.privacyStatus || video.status.privacyStatus === 'public')).slice(0, 3).map((video, index) => ({
+      id: `yt_${ctx.trackId}_d${ctx.dayNumber}_guest_${video.id}_${index + 1}`,
+      title: video.snippet?.title || ctx.topic,
+      channelName: video.snippet?.channelTitle || 'YouTube channel',
+      channelId: video.snippet?.channelId,
+      url: `https://www.youtube.com/watch?v=${video.id}`,
+      videoId: video.id,
+      topicCovered: ctx.topic,
+      explanation: (video.snippet?.description || `Video result for ${ctx.topic}`).slice(0, 160),
+      whyUseful: `Guest search result for ${ctx.topic}.`,
+      duration: formatDurationSeconds(parseIsoDurationToSeconds(video.contentDetails?.duration)),
+      language: video.snippet?.defaultAudioLanguage || video.snippet?.defaultLanguage || 'en',
+      isVerifiedVideo: true,
+      linkKind: 'verified_video' as const
+    }));
+    return tutorials.length
+      ? { tutorials, providerStatus: 'youtube_api_verified', statusNote: `Verified ${tutorials.length} Guest YouTube results.` }
+      : { tutorials: fallback, providerStatus: 'search_fallback_quota', statusNote: 'No verified direct videos returned; showing existing Guest topic search links.' };
+  } catch {
+    return { tutorials: fallback, providerStatus: 'search_fallback_quota', statusNote: 'YouTube lookup failed; showing existing Guest topic search links.' };
+  }
 }
 
 export async function discoverYouTubeTutorials(
   ctx: SharedCurriculumDayContext,
   youtubeApiKey?: string,
-  fetchImpl: typeof fetch = fetch
+  fetchImpl: typeof fetch = fetch,
+  role: 'owner' | 'guest' = 'owner'
 ): Promise<YouTubeDiscoveryResult> {
   const apiKey = youtubeApiKey?.trim().replace(/^["']|["']$/g, '').trim();
   if (!apiKey) {
+    if (role === 'guest' && !isCodingRelatedTopic(ctx)) {
+      return {
+        tutorials: buildLegacyGuestSearchFallbackTutorials(ctx),
+        providerStatus: 'search_fallback_no_key',
+        statusNote: 'YouTube API key is unavailable; preserving Guest topic search links.'
+      };
+    }
     return {
       tutorials: buildSearchFallbackTutorials(ctx),
-      providerStatus: 'search_fallback_no_key',
-      statusNote:
-        'YOUTUBE_API_KEY is not configured; providing clearly labelled YouTube topic search links without inventing video IDs.'
+      providerStatus: 'unavailable',
+      statusNote: 'No suitable video found. Verified topic recommendations require the YouTube Data API.'
     };
   }
 
@@ -590,158 +1043,9 @@ export async function discoverYouTubeTutorials(
     }
   };
 
-  try {
-    const primaryQuery = buildTrackQueryTerms(ctx)[0];
-    const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
-    searchUrl.searchParams.set('part', 'snippet');
-    searchUrl.searchParams.set('type', 'video');
-    searchUrl.searchParams.set('maxResults', '8');
-    searchUrl.searchParams.set('relevanceLanguage', 'en');
-    searchUrl.searchParams.set('safeSearch', 'strict');
-    searchUrl.searchParams.set('q', primaryQuery);
-    searchUrl.searchParams.set('key', apiKey);
-
-    const searchResp = await fetchImpl(searchUrl.toString(), {
-      signal: AbortSignal.timeout(8000)
-    });
-
-    if (searchResp.status === 403 || searchResp.status === 429) {
-      const detail = await extractSanitizedYouTubeError(searchResp);
-      return {
-        tutorials: buildSearchFallbackTutorials(ctx),
-        providerStatus: 'search_fallback_quota',
-        statusNote: detail
-          ? `YouTube Data API HTTP ${searchResp.status}: ${detail}; fell back safely to labelled topic search links.`
-          : 'YouTube Data API free quota reached or key restricted; fell back safely to clearly labelled topic search links.'
-      };
-    }
-
-    if (!searchResp.ok) {
-      const detail = await extractSanitizedYouTubeError(searchResp);
-      return {
-        tutorials: buildSearchFallbackTutorials(ctx),
-        providerStatus: 'search_fallback_quota',
-        statusNote: detail
-          ? `YouTube search API returned HTTP ${searchResp.status} (${detail}); using labelled search links instead of unverified IDs.`
-          : `YouTube search API returned HTTP ${searchResp.status}; using labelled search links instead of unverified IDs.`
-      };
-    }
-
-    const searchJson = (await searchResp.json()) as { items?: YouTubeSearchItem[] };
-    const candidateIds = Array.from(
-      new Set(
-        (searchJson.items || [])
-          .map((item) => item.id?.videoId)
-          .filter((id): id is string => Boolean(id && /^[a-zA-Z0-9_-]{11}$/.test(id)))
-      )
-    );
-
-    if (candidateIds.length === 0) {
-      return {
-        tutorials: buildSearchFallbackTutorials(ctx),
-        providerStatus: 'search_fallback_quota',
-        statusNote:
-          'YouTube API returned zero verifiable public video IDs for this topic; using labelled search links.'
-      };
-    }
-
-    const videosUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
-    videosUrl.searchParams.set('part', 'snippet,contentDetails,status');
-    videosUrl.searchParams.set('id', candidateIds.join(','));
-    videosUrl.searchParams.set('key', apiKey);
-
-    const videosResp = await fetchImpl(videosUrl.toString(), {
-      signal: AbortSignal.timeout(8000)
-    });
-
-    if (!videosResp.ok) {
-      const detail = await extractSanitizedYouTubeError(videosResp);
-      return {
-        tutorials: buildSearchFallbackTutorials(ctx),
-        providerStatus: 'search_fallback_quota',
-        statusNote: detail
-          ? `YouTube videos metadata lookup returned HTTP ${videosResp.status} (${detail}).`
-          : `YouTube videos metadata lookup returned HTTP ${videosResp.status}.`
-      };
-    }
-
-    const videosJson = (await videosResp.json()) as { items?: YouTubeVideoItem[] };
-    const seenVideoIds = new Set<string>();
-    const publicVideos = (videosJson.items || []).filter((v) => {
-      if (!v.id || seenVideoIds.has(v.id)) return false;
-      if (!v.snippet?.title || !v.snippet?.channelTitle) return false;
-      if (v.status?.privacyStatus && v.status.privacyStatus !== 'public') return false;
-      seenVideoIds.add(v.id);
-      return true;
-    });
-
-    const sorted = [...publicVideos].sort((a, b) => {
-      const durA = parseIsoDurationToSeconds(a.contentDetails?.duration);
-      const durB = parseIsoDurationToSeconds(b.contentDetails?.duration);
-      return (durB >= 120 ? 1 : 0) - (durA >= 120 ? 1 : 0);
-    });
-
-    const selected = sorted.slice(0, 3);
-    if (selected.length === 0) {
-      return {
-        tutorials: buildSearchFallbackTutorials(ctx),
-        providerStatus: 'search_fallback_quota',
-        statusNote: 'No public YouTube videos passed verification; using labelled search links.'
-      };
-    }
-
-    const tutorials: CanonicalYouTubeResource[] = selected.map((v, idx) => {
-      const videoId = v.id as string;
-      const durSecs = parseIsoDurationToSeconds(v.contentDetails?.duration);
-      const snippetDesc = (v.snippet?.description || '').replace(/\s+/g, ' ').trim();
-      const shortSnippet = snippetDesc
-        ? snippetDesc.slice(0, 160)
-        : `Video tutorial covering ${ctx.topic}.`;
-      const rawThumb =
-        v.snippet?.thumbnails?.medium?.url ||
-        v.snippet?.thumbnails?.high?.url ||
-        v.snippet?.thumbnails?.default?.url ||
-        `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-      const thumbnailUrl = isValidHttpsUrl(rawThumb)
-        ? rawThumb
-        : `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
-      return {
-        id: `yt_${ctx.trackId}_d${ctx.dayNumber}_${videoId}_${idx + 1}`,
-        title: v.snippet?.title || `${ctx.topic} Tutorial`,
-        channelName: v.snippet?.channelTitle || 'Verified YouTube Channel',
-        url: `https://www.youtube.com/watch?v=${videoId}`,
-        videoId,
-        thumbnailUrl,
-        topicCovered: `${ctx.topic}: ${ctx.objectives[0] || shortSnippet}`,
-        explanation: shortSnippet,
-        whyUseful: `Directly explains "${ctx.topic}" for Day ${ctx.dayNumber} of ${ctx.trackLabel}.`,
-        duration: formatDurationSeconds(durSecs),
-        language: v.snippet?.defaultAudioLanguage || v.snippet?.defaultLanguage || 'en',
-        isVerifiedVideo: true,
-        linkKind: 'verified_video'
-      };
-    });
-
-    return {
-      tutorials,
-      providerStatus: 'youtube_api_verified',
-      statusNote: `Verified ${tutorials.length} public YouTube tutorials via YouTube Data API v3.`
-    };
-  } catch (err) {
-    const safeErr =
-      err instanceof Error
-        ? err.message
-            .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[REDACTED]')
-            .replace(/key=[^&\s"']+/gi, 'key=[REDACTED]')
-        : '';
-    return {
-      tutorials: buildSearchFallbackTutorials(ctx),
-      providerStatus: 'search_fallback_quota',
-      statusNote: safeErr
-        ? `YouTube verification error (${safeErr}); using labelled search links.`
-        : 'YouTube verification failed; using labelled search links.'
-    };
-  }
+  if (isCodingRelatedTopic(ctx)) return discoverApprovedCodingTutorials(ctx, apiKey, fetchImpl);
+  if (role === 'guest') return discoverLegacyGuestNonCodingTutorials(ctx, apiKey, fetchImpl);
+  return discoverNonCodingTutorials(ctx, apiKey, fetchImpl);
 }
 
 // =========================================================================
@@ -2381,7 +2685,10 @@ export async function syncTrackResourcesToSupabase(
         }
       );
       if (!resResp.ok && (resResp.status === 400 || resResp.status === 404)) {
-        const legacyRows = resourceRows.map(({ thumbnail_url: _t, ...rest }) => rest);
+        const legacyRows = resourceRows.map((row) => {
+          const { thumbnail_url: _t, ...rest } = row as typeof row & { thumbnail_url?: string | null };
+          return rest;
+        });
         resResp = await fetchFn(
           `${baseUrl}/rest/v1/daily_learning_resources?on_conflict=user_id,track_id,plan_day,resource_type,url`,
           {
@@ -2493,6 +2800,7 @@ interface SupabaseResourceRow {
   title: string;
   url: string;
   channel_or_source: string;
+  channel_id?: string | null;
   topic_covered: string;
   description: string;
   why_useful: string;
@@ -2520,7 +2828,8 @@ interface SupabaseAutomationRunRow {
 export async function fetchTrackBriefFromSupabase(
   trackId: SharedTrackId,
   dayNumber: number,
-  config: PipelineEnvConfig
+  config: PipelineEnvConfig,
+  role: 'owner' | 'guest' = 'owner'
 ): Promise<CanonicalTrackDailyResources | null> {
   if (!isSupabaseServerConfigured(config)) return null;
 
@@ -2555,8 +2864,13 @@ export async function fetchTrackBriefFromSupabase(
     if (!brief) return null;
 
     const resources = resResp.ok ? ((await resResp.json()) as SupabaseResourceRow[]) : [];
-
-    const youtubeRows = resources.filter((r) => r.resource_type === 'youtube');
+    const youtubeRows = await revalidateCachedYouTubeRows(
+      resources,
+      ctx,
+      config.youtubeApiKey,
+      fetchFn,
+      role
+    );
     const docRows = resources.filter((r) => r.resource_type === 'official_documentation');
     const exerciseRows = resources.filter((r) => r.resource_type === 'practical_exercise');
 
@@ -2569,6 +2883,7 @@ export async function fetchTrackBriefFromSupabase(
               id: `yt_${trackId}_d${dayNumber}_sb_${idx + 1}`,
               title: yt.title,
               channelName: yt.channel_or_source,
+              channelId: yt.channel_id || undefined,
               url: yt.url,
               videoId: vid,
               thumbnailUrl:
@@ -2734,13 +3049,15 @@ export function buildDeterministicReadOnlyTrack(
   trackId: SharedTrackId,
   dayNumber: number,
   config: PipelineEnvConfig,
-  existingCached?: CanonicalTrackDailyResources
+  existingCached?: CanonicalTrackDailyResources,
+  scheduleStartIsoIst: string = START_DATE_IST
 ): CanonicalTrackDailyResources | null {
-  const ctx = getSharedCurriculumDayContext(trackId, dayNumber);
+  const ctx = getCycleCurriculumContext(trackId, dayNumber, scheduleStartIsoIst);
   if (!ctx) return null;
 
   const actualSchedule = buildActualScheduleMeta(ctx);
-  const tutorials = buildSearchFallbackTutorials(ctx);
+  const isGuestSchedule = scheduleStartIsoIst === LEGACY_GUEST_START_DATE_IST;
+  const tutorials = isGuestSchedule ? buildLegacyGuestSearchFallbackTutorials(ctx) : buildSearchFallbackTutorials(ctx);
   const docs = getSharedOfficialDocs(trackId, dayNumber);
 
   let leetcodeQuestions: SharedDailyLeetCodeQuestion[] = [];
@@ -2769,7 +3086,7 @@ export function buildDeterministicReadOnlyTrack(
     hasGemini
       ? 'Awaiting daily automation refresh for live AI & YouTube enrichment.'
       : 'Curriculum, official docs, and LeetCode loaded; PREPARATION_GEMINI_KEY needed for AI enrichment.',
-    'Displaying clearly labelled YouTube topic search links without inventing video IDs.'
+    isGuestSchedule ? 'Displaying Guest YouTube topic search links.' : 'No suitable video found without a verified YouTube recommendation.'
   ];
   if (leetcodeWarning) statusNotes.push(leetcodeWarning);
 
@@ -2799,9 +3116,9 @@ export function buildDeterministicReadOnlyTrack(
     status: 'partially_updated',
     statusMessage: statusNotes.join(' '),
     aiProviderStatus: hasGemini ? 'unavailable' : 'missing_api_key',
-    youtubeProviderStatus: config.youtubeApiKey?.trim()
-      ? 'search_fallback_quota'
-      : 'search_fallback_no_key',
+    youtubeProviderStatus: isGuestSchedule
+      ? config.youtubeApiKey?.trim() ? 'search_fallback_quota' : 'search_fallback_no_key'
+      : 'unavailable',
     generatedAt: existingCached?.generatedAt || nowIso,
     updatedAt: nowIso
   };
@@ -2816,27 +3133,40 @@ export async function generateTrackDailyCanonical(
     persistToCloud?: boolean;
     existingCached?: CanonicalTrackDailyResources | null;
     skipExternalNetworkChecks?: boolean;
+    scheduleStartIsoIst?: string;
+    role?: 'owner' | 'guest';
   }
 ): Promise<CanonicalTrackDailyResources> {
-  const ctx = getSharedCurriculumDayContext(trackId, dayNumber);
+  const scheduleStartIsoIst = options?.scheduleStartIsoIst || START_DATE_IST;
+  const ctx = getCycleCurriculumContext(trackId, dayNumber, scheduleStartIsoIst);
   if (!ctx) {
     throw new Error(`Invalid dayNumber ${dayNumber} for track "${trackId}".`);
   }
 
-  if (!isTrackDayCurrentlyUnlockedCanonical(trackId, dayNumber)) {
+  if (!isTrackDayCurrentlyUnlockedCanonical(trackId, dayNumber, Date.now(), scheduleStartIsoIst)) {
     throw new Error(
       `LOCKED_FUTURE_DAY: ${ctx.trackLabel} Day ${dayNumber} unlocks on ${ctx.dateLabel} at 00:00 IST.`
     );
   }
 
-  const existingCached = options?.existingCached || undefined;
+  const rawExistingCached = options?.existingCached || undefined;
+  const role = options?.role || 'owner';
+  const cachedTutorials = rawExistingCached ? reusableTutorials(ctx, rawExistingCached.youtubeTutorials || [], role) : [];
+  const existingCached = rawExistingCached
+    ? {
+        ...rawExistingCached,
+        youtubeTutorials: cachedTutorials
+      }
+    : undefined;
   const hasYoutubeKey = Boolean(config.youtubeApiKey?.trim());
   const hasGeminiKey = Boolean(config.geminiApiKey?.trim());
 
   // Avoid unnecessary regeneration & quota burn when valid AI/YouTube resources already exist
   if (!options?.forceRefresh && existingCached) {
     const aiComplete = !hasGeminiKey || existingCached.aiProviderStatus === 'gemini_generated';
-    const ytComplete = !hasYoutubeKey || existingCached.youtubeProviderStatus === 'youtube_api_verified';
+    const ytComplete =
+      !hasYoutubeKey ||
+      (existingCached.youtubeProviderStatus === 'youtube_api_verified' && existingCached.youtubeTutorials.length > 0);
     const ageMs = Date.now() - new Date(existingCached.updatedAt).getTime();
     const recentTransientCooldown =
       Number.isFinite(ageMs) &&
@@ -2873,7 +3203,7 @@ export async function generateTrackDailyCanonical(
       statusNote: 'Using cached verified YouTube tutorials to preserve API quota.'
     };
   } else {
-    ytResult = await discoverYouTubeTutorials(ctx, config.youtubeApiKey, config.fetchImpl || fetch);
+    ytResult = await discoverYouTubeTutorials(ctx, config.youtubeApiKey, config.fetchImpl || fetch, role);
     if (
       ytResult.providerStatus !== 'youtube_api_verified' &&
       existingCached?.youtubeProviderStatus === 'youtube_api_verified' &&
@@ -2978,39 +3308,68 @@ export async function generateTrackDailyCanonical(
     finalTutorials = fallback.tutorials;
   }
 
-  const fullyAiAndYtVerified =
-    aiStatus === 'gemini_generated' && ytResult.providerStatus === 'youtube_api_verified';
-
   const statusNotes: string[] = [];
-  let status: CanonicalResourceStatus = 'updated';
-  if (fullyAiAndYtVerified) {
-    status = 'updated';
-    statusNotes.push(
-      'Updated successfully with verified YouTube tutorials and Gemini AI insights.'
-    );
+  const requiredResourcesComplete = hasCompleteRequiredTrackResources({
+    trackId,
+    topicExplanation: finalExplanation,
+    learningObjectives: finalObjectives,
+    officialDocs: docs,
+    practicalExercises,
+    youtubeTutorials: finalTutorials,
+    youtubeProviderStatus: ytResult.providerStatus,
+    leetcodeQuestions
+  });
+  const guestLegacyComplete =
+    aiStatus === 'gemini_generated' && ytResult.providerStatus === 'youtube_api_verified';
+  const status: CanonicalResourceStatus = role === 'guest'
+    ? guestLegacyComplete ? 'updated' : 'partially_updated'
+    : requiredResourcesComplete ? 'updated' : 'partially_updated';
+
+  if (role === 'guest') {
+    if (guestLegacyComplete) {
+      statusNotes.push('Updated successfully with verified YouTube tutorials and Gemini AI insights.');
+    } else {
+      if (aiStatus === 'missing_api_key') {
+        statusNotes.push(
+          'Curriculum, official docs, and LeetCode loaded; PREPARATION_GEMINI_KEY needed for AI enrichment.'
+        );
+      } else if (aiStatus === 'invalid_api_key') {
+        statusNotes.push(geminiResult.errorMessage || 'PREPARATION_GEMINI_KEY is invalid or disabled. Update PREPARATION_GEMINI_KEY in Secrets.');
+      } else if (aiStatus === 'quota_exhausted_cached' || aiStatus === 'unavailable') {
+        statusNotes.push(
+          `Gemini fallback: ${geminiResult.errorMessage || (aiStatus === 'unavailable' ? 'provider temporarily unavailable' : 'quota or rate limit reached')}; displaying grounded curriculum${existingCached?.aiProviderStatus === 'gemini_generated' ? ' and previously cached Gemini notes' : ''}. No new Gemini content was generated for this track.`
+        );
+      }
+      if (ytResult.providerStatus !== 'youtube_api_verified') statusNotes.push(ytResult.statusNote);
+    }
   } else {
-    status = 'partially_updated';
-    if (aiStatus === 'missing_api_key') {
-      statusNotes.push(
-        'Curriculum, official docs, and LeetCode loaded; PREPARATION_GEMINI_KEY needed for AI enrichment.'
-      );
-    } else if (aiStatus === 'invalid_api_key') {
-      statusNotes.push(
-        geminiResult.errorMessage ||
-          'PREPARATION_GEMINI_KEY is invalid or disabled. Update PREPARATION_GEMINI_KEY in Secrets.'
-      );
-    } else if (aiStatus === 'quota_exhausted_cached') {
-      statusNotes.push(
-        `Gemini fallback: ${geminiResult.errorMessage || 'quota or rate limit reached'}; displaying grounded curriculum${existingCached?.aiProviderStatus === 'gemini_generated' ? ' and previously cached Gemini notes' : ''}. No new Gemini content was generated for this track.`
-      );
-    } else if (aiStatus === 'unavailable') {
-      statusNotes.push(
-        `Gemini fallback: ${geminiResult.errorMessage || 'provider temporarily unavailable'}; displaying grounded curriculum${existingCached?.aiProviderStatus === 'gemini_generated' ? ' and previously cached Gemini notes' : ''}. No new Gemini content was generated for this track.`
-      );
-    }
-    if (ytResult.providerStatus !== 'youtube_api_verified') {
-      statusNotes.push(ytResult.statusNote);
-    }
+    statusNotes.push(
+      requiredResourcesComplete
+        ? 'Required daily learning resources were refreshed and verified.'
+        : 'Some required daily resources are missing or could not be verified; see the provider and resource details below.'
+    );
+  }
+
+  if (role !== 'guest' && aiStatus === 'missing_api_key') {
+    statusNotes.push(
+      'Grounded curriculum fallback is displayed; PREPARATION_GEMINI_KEY is needed for optional AI enrichment.'
+    );
+  } else if (role !== 'guest' && aiStatus === 'invalid_api_key') {
+    statusNotes.push(
+      geminiResult.errorMessage ||
+        'PREPARATION_GEMINI_KEY is invalid or disabled. Update PREPARATION_GEMINI_KEY in Secrets.'
+    );
+  } else if (role !== 'guest' && aiStatus === 'quota_exhausted_cached') {
+    statusNotes.push(
+      `Gemini fallback: ${geminiResult.errorMessage || 'quota or rate limit reached'}; displaying grounded curriculum${existingCached?.aiProviderStatus === 'gemini_generated' ? ' and previously cached Gemini notes' : ''}. No new Gemini content was generated for this track.`
+    );
+  } else if (role !== 'guest' && aiStatus === 'unavailable') {
+    statusNotes.push(
+      `Gemini fallback: ${geminiResult.errorMessage || 'provider temporarily unavailable'}; displaying grounded curriculum${existingCached?.aiProviderStatus === 'gemini_generated' ? ' and previously cached Gemini notes' : ''}. No new Gemini content was generated for this track.`
+    );
+  }
+  if (role !== 'guest' && ytResult.providerStatus !== 'youtube_api_verified') {
+    statusNotes.push(ytResult.statusNote);
   }
   if (leetcodeWarning) statusNotes.push(leetcodeWarning);
 

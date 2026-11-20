@@ -22,9 +22,9 @@ export function getScheduledDayForWeek(weekNumber: number): number {
  * Computes exact YYYY-MM-DD in Asia/Kolkata (UTC+05:30) for a given dayNumber (1..180)
  * and returns explicit midnight IST ISO string: YYYY-MM-DDT00:00:00+05:30.
  */
-export function getWeekUnlockIsoIst(weekNumber: number): string {
+export function getWeekUnlockIsoIst(weekNumber: number, startIsoIst: string = PREPARATION_START_ISO_IST): string {
   const scheduledDay = getScheduledDayForWeek(weekNumber);
-  const unlockEpoch = START_EPOCH_MS + (scheduledDay - 1) * DAY_MS;
+  const unlockEpoch = new Date(startIsoIst).getTime() + (scheduledDay - 1) * DAY_MS;
   const istShifted = new Date(unlockEpoch + IST_OFFSET_MS);
   const year = istShifted.getUTCFullYear();
   const month = String(istShifted.getUTCMonth() + 1).padStart(2, '0');
@@ -32,12 +32,12 @@ export function getWeekUnlockIsoIst(weekNumber: number): string {
   return `${year}-${month}-${day}T00:00:00+05:30`;
 }
 
-export function getWeekUnlockEpochMs(weekNumber: number): number {
-  return new Date(getWeekUnlockIsoIst(weekNumber)).getTime();
+export function getWeekUnlockEpochMs(weekNumber: number, startIsoIst: string = PREPARATION_START_ISO_IST): number {
+  return new Date(getWeekUnlockIsoIst(weekNumber, startIsoIst)).getTime();
 }
 
-export function getWeekUnlockDateLabelIst(weekNumber: number): string {
-  const unlockMs = getWeekUnlockEpochMs(weekNumber);
+export function getWeekUnlockDateLabelIst(weekNumber: number, startIsoIst: string = PREPARATION_START_ISO_IST): string {
+  const unlockMs = getWeekUnlockEpochMs(weekNumber, startIsoIst);
   return new Date(unlockMs).toLocaleDateString('en-GB', {
     timeZone: 'Asia/Kolkata',
     day: '2-digit',
@@ -46,7 +46,7 @@ export function getWeekUnlockDateLabelIst(weekNumber: number): string {
   });
 }
 
-export function getWeekUnlockDateTimeLabelIst(weekNumber: number): string {
+export function getWeekUnlockDateTimeLabelIst(weekNumber: number, startIsoIst: string = PREPARATION_START_ISO_IST): string {
   return `${getWeekUnlockDateLabelIst(weekNumber)} · 00:00 IST`;
 }
 
@@ -56,10 +56,11 @@ export function getWeekUnlockDateTimeLabelIst(weekNumber: number): string {
  */
 export function isAssessmentUnlockedByIstClock(
   weekNumber: number,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  startIsoIst: string = PREPARATION_START_ISO_IST
 ): boolean {
   if (!isValidAssessmentWeek(weekNumber)) return false;
-  return nowMs >= getWeekUnlockEpochMs(weekNumber);
+  return nowMs >= getWeekUnlockEpochMs(weekNumber, startIsoIst);
 }
 
 export interface AssessmentCountdown {
@@ -75,9 +76,10 @@ export interface AssessmentCountdown {
 
 export function getAssessmentLockStatus(
   weekNumber: number,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  startIsoIst: string = PREPARATION_START_ISO_IST
 ): AssessmentCountdown {
-  const unlockIsoIst = getWeekUnlockIsoIst(weekNumber);
+  const unlockIsoIst = getWeekUnlockIsoIst(weekNumber, startIsoIst);
   const unlockMs = new Date(unlockIsoIst).getTime();
   const diff = Math.max(0, unlockMs - nowMs);
   const isUnlocked = isValidAssessmentWeek(weekNumber) && nowMs >= unlockMs;
@@ -95,6 +97,6 @@ export function getAssessmentLockStatus(
     minutes,
     seconds,
     unlockIsoIst,
-    unlockLabelIst: getWeekUnlockDateTimeLabelIst(weekNumber)
+    unlockLabelIst: getWeekUnlockDateTimeLabelIst(weekNumber, startIsoIst)
   };
 }

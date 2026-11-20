@@ -18,8 +18,9 @@ import {
   AZURE_END_DATE,
   AZURE_TOTAL_PLANNED_HOURS
 } from '../data/azureSyllabus';
-import { getDayLockStatus, SUB_TRACK_MAX_DAYS } from '../utils/dailyLock';
+import { DAILY_PREPARATION_START_ISO_IST, getDayLockStatus, SUB_TRACK_MAX_DAYS } from '../utils/dailyLock';
 import { TrackDaySchedule } from '../types';
+import { OWNER_RELAUNCH_START_ISO_IST, shiftScheduleDate } from '../utils/relaunch';
 import {
   Code2,
   Cloud,
@@ -72,12 +73,13 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
   } = useApp();
 
   const isDsa = trackId === 'dsa';
-  const days: TrackDaySchedule[] = isDsa ? DSA_100_DAYS : AZURE_100_DAYS;
+  const legacyDays: TrackDaySchedule[] = isDsa ? DSA_100_DAYS : AZURE_100_DAYS;
+  const days: TrackDaySchedule[] = userRole === 'owner' ? legacyDays.map((entry) => shiftScheduleDate(entry, 7)) : legacyDays;
   const overview = isDsa ? DSA_PLAN_OVERVIEW : AZURE_PLAN_OVERVIEW;
   const pdfUrl = isDsa ? DSA_PDF_URL : AZURE_PDF_URL;
   const pdfFilename = isDsa ? DSA_PDF_FILENAME : AZURE_PDF_FILENAME;
-  const startDate = isDsa ? DSA_START_DATE : AZURE_START_DATE;
-  const endDate = isDsa ? DSA_END_DATE : AZURE_END_DATE;
+  const startDate = userRole === 'owner' ? '23 Nov 2026' : isDsa ? DSA_START_DATE : AZURE_START_DATE;
+  const endDate = userRole === 'owner' ? '02 Mar 2027' : isDsa ? DSA_END_DATE : AZURE_END_DATE;
   const totalPlannedHours = isDsa ? DSA_TOTAL_PLANNED_HOURS : AZURE_TOTAL_PLANNED_HOURS;
 
   const trackProgress = isDsa ? state.dsaProgress : state.azureProgress;
@@ -88,7 +90,7 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
   const isDayUnlocked = isTrackDayUnlocked(trackId, day.dayNumber);
   const weekFirstDay = Math.max(1, (day.weekNumber - 1) * 7 + 1);
   const isWeekUnlocked = isTrackDayUnlocked(trackId, weekFirstDay);
-  const lockStatus = getDayLockStatus(day.dayNumber, nowTimestamp, SUB_TRACK_MAX_DAYS);
+  const lockStatus = getDayLockStatus(day.dayNumber, nowTimestamp, SUB_TRACK_MAX_DAYS, userRole === 'owner' ? OWNER_RELAUNCH_START_ISO_IST : DAILY_PREPARATION_START_ISO_IST);
   const { completed, total, percentage } = getTrackDayTaskCompletion(trackId, day.dayNumber);
   const status = getTrackDayStatus(trackId, day.dayNumber);
 
@@ -241,7 +243,9 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
             {overview.title}
           </h1>
           <p className="text-xs text-[#5A5650]">
-            {overview.calendarSummary}
+            {userRole === 'owner'
+              ? `Calendar: 23 November 2026 – ${endDate} | ${isDsa ? 'Monday–Friday: 90 minutes | Saturday: 2 hours revision | Sunday: 2 hours revision' : '1 hour daily, including weekend revision'} | Total: 100 consecutive calendar days.`
+              : overview.calendarSummary}
           </p>
         </div>
 

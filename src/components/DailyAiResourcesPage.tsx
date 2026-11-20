@@ -6,6 +6,8 @@ import {
   TrackId
 } from '../types';
 import { getDayLockStatus, MAIN_TRACK_MAX_DAYS, SUB_TRACK_MAX_DAYS } from '../utils/dailyLock';
+import { DAILY_PREPARATION_START_ISO_IST } from '../utils/dailyLock';
+import { OWNER_RELAUNCH_START_ISO_IST } from '../utils/relaunch';
 import { getOwnerAccessToken } from '../lib/supabase';
 import {
   Sparkles,
@@ -102,7 +104,8 @@ export const DailyAiResourcesPage: React.FC = () => {
   const activeDay = selectedDays[activeTrack];
   const maxDayForTrack = activeTrack === 'main' ? MAIN_TRACK_MAX_DAYS : SUB_TRACK_MAX_DAYS;
   const isSelectedDayUnlocked = isTrackDayUnlocked(activeTrack, activeDay);
-  const lockStatus = getDayLockStatus(activeDay, nowTimestamp, maxDayForTrack);
+  const scheduleStart = userRole === 'owner' ? OWNER_RELAUNCH_START_ISO_IST : DAILY_PREPARATION_START_ISO_IST;
+  const lockStatus = getDayLockStatus(activeDay, nowTimestamp, maxDayForTrack, scheduleStart);
 
   const fetchTrackData = useCallback(
     async (track: TrackId, day: number) => {
@@ -114,7 +117,13 @@ export const DailyAiResourcesPage: React.FC = () => {
       setLoading(true);
       setErrorMessage(null);
       try {
-        const resp = await fetch(`/api/daily-resources?track=${track}&day=${day}`);
+        const headers: HeadersInit = {};
+        if (userRole === 'owner') {
+          const accessToken = await getOwnerAccessToken();
+          if (!accessToken) throw new Error('Loading Owner resources requires an authenticated Owner session.');
+          headers.Authorization = `Bearer ${accessToken}`;
+        }
+        const resp = await fetch(`/api/daily-resources?track=${track}&day=${day}&role=${userRole}`, { headers });
         const json = await resp.json();
         if (!resp.ok) {
           throw new Error(json.error || `Failed to load daily resources (HTTP ${resp.status})`);
@@ -128,7 +137,7 @@ export const DailyAiResourcesPage: React.FC = () => {
         setLoading(false);
       }
     },
-    [isTrackDayUnlocked]
+    [isTrackDayUnlocked, userRole]
   );
 
   useEffect(() => {
@@ -683,6 +692,11 @@ export const DailyAiResourcesPage: React.FC = () => {
                   </div>
 
                   <div className="grid grid-cols-1 gap-3">
+                    {currentTrackData.youtubeTutorials.length === 0 && (
+                      <p className="rounded-xl border border-[#E0DCD3] bg-[#FAF8F5] p-4 text-sm text-[#625D56]">
+                        No suitable video found
+                      </p>
+                    )}
                     {currentTrackData.youtubeTutorials.map(yt => {
                       const doneKey = `yt_${activeTrack}_d${activeDay}_${yt.id}`;
                       const isDone = !!completions[doneKey];

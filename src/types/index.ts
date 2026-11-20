@@ -266,6 +266,28 @@ export interface UserState {
     lastSyncedAt?: string;
     ownerUserId?: string;
   };
+  preparationCycleId?: string;
+  preparationCycleStartIsoIst?: string;
+  preparationCycleHistory?: Array<{
+    cycleId: string;
+    archivedAt: string;
+    startDateIsoIst: string;
+    main: {
+      completedTasks: Record<string, boolean>;
+      completedDays: Record<number, boolean>;
+      dayNotes: Record<number, string>;
+      studyTimeSeconds: Record<number, number>;
+      assessmentSubmissions: Record<number, AssessmentSubmission>;
+      leetcodeProgress: Record<string, LeetCodeProgressEntry>;
+      activeAssessmentAttempt?: ActiveAssessmentAttempt | null;
+    };
+    dsa: TrackProgressState;
+    azure: TrackProgressState;
+    studyLogs: StudySessionLog[];
+    timerState?: TimerState;
+    trackTimerSnapshots?: Partial<Record<TrackId, TimerState>>;
+    dailyAiResourceCompletions?: Record<string, boolean>;
+  }>;
   role: UserRole; // 'owner' (Steeven) or 'guest' (Guest)
   isAuthenticated: boolean;
   completedTasks: Record<string, boolean>; // key: `${dayNumber}_${taskId}` -> boolean (Main 180-day plan)
@@ -375,6 +397,7 @@ export interface DailyYouTubeResource {
   channelName: string;
   url: string;
   videoId?: string;
+  channelId?: string;
   thumbnailUrl?: string;
   topicCovered: string;
   explanation: string;

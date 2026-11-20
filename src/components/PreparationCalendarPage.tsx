@@ -4,7 +4,8 @@ import { ALL_180_DAYS } from '../data/syllabus';
 import { DSA_100_DAYS } from '../data/dsaSyllabus';
 import { AZURE_100_DAYS } from '../data/azureSyllabus';
 import { DaySchedule, TrackDaySchedule, TrackId } from '../types';
-import { getDayLockStatus, MAIN_TRACK_MAX_DAYS, SUB_TRACK_MAX_DAYS } from '../utils/dailyLock';
+import { DAILY_PREPARATION_START_ISO_IST, getDayLockStatus, MAIN_TRACK_MAX_DAYS, SUB_TRACK_MAX_DAYS } from '../utils/dailyLock';
+import { OWNER_RELAUNCH_START_ISO_IST, shiftScheduleDate } from '../utils/relaunch';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -25,6 +26,7 @@ type UnifiedCalendarDay =
 export const PreparationCalendarPage: React.FC = () => {
   const {
     nowTimestamp,
+    userRole,
     currentDayNumber,
     currentTrackDayNumber,
     isTrackDayUnlocked,
@@ -68,7 +70,7 @@ export const PreparationCalendarPage: React.FC = () => {
       setViewMonth(4); // May 2027
     } else {
       setViewYear(2027);
-      setViewMonth(1); // Feb 2027
+      setViewMonth(userRole === 'owner' ? 2 : 1); // Owner cycle ends in March; legacy Guest ends in February.
     }
   };
 
@@ -83,11 +85,11 @@ export const PreparationCalendarPage: React.FC = () => {
 
     const dayMap = new Map<string, UnifiedCalendarDay>();
     if (selectedTrack === 'main') {
-      ALL_180_DAYS.forEach(d => dayMap.set(d.isoDate, { kind: 'main', data: d }));
+      (userRole === 'owner' ? ALL_180_DAYS.map((d) => shiftScheduleDate(d, 7)) : ALL_180_DAYS).forEach(d => dayMap.set(d.isoDate, { kind: 'main', data: d }));
     } else if (selectedTrack === 'dsa') {
-      DSA_100_DAYS.forEach(d => dayMap.set(d.isoDate, { kind: 'track', data: d }));
+      (userRole === 'owner' ? DSA_100_DAYS.map((d) => shiftScheduleDate(d, 7)) : DSA_100_DAYS).forEach(d => dayMap.set(d.isoDate, { kind: 'track', data: d }));
     } else {
-      AZURE_100_DAYS.forEach(d => dayMap.set(d.isoDate, { kind: 'track', data: d }));
+      (userRole === 'owner' ? AZURE_100_DAYS.map((d) => shiftScheduleDate(d, 7)) : AZURE_100_DAYS).forEach(d => dayMap.set(d.isoDate, { kind: 'track', data: d }));
     }
 
     const cells: Array<{
@@ -116,7 +118,7 @@ export const PreparationCalendarPage: React.FC = () => {
     }
 
     return cells;
-  }, [viewYear, viewMonth, selectedTrack]);
+  }, [viewYear, viewMonth, selectedTrack, userRole]);
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -157,8 +159,8 @@ export const PreparationCalendarPage: React.FC = () => {
           </h1>
           <p className="text-xs sm:text-sm text-[#78716C] mt-1">
             {selectedTrack === 'main'
-              ? 'Visual calendar from 16 November 2026 to 14 May 2027 (Main Plan).'
-              : 'Visual calendar from 16 November 2026 to 23 February 2027 (100-Day Independent Track).'}
+              ? `Visual calendar from ${userRole === 'owner' ? '23 November 2026 to 21 May 2027' : '16 November 2026 to 14 May 2027'} (Main Plan).`
+              : `Visual calendar from ${userRole === 'owner' ? '23 November 2026 to 02 March 2027' : '16 November 2026 to 23 February 2027'} (100-Day Independent Track).`}
           </p>
         </div>
 
@@ -466,7 +468,8 @@ export const PreparationCalendarPage: React.FC = () => {
               const modalLock = getDayLockStatus(
                 selectedDayModal.data.dayNumber,
                 nowTimestamp,
-                modalMaxDay
+                modalMaxDay,
+                userRole === 'owner' ? OWNER_RELAUNCH_START_ISO_IST : DAILY_PREPARATION_START_ISO_IST
               );
 
               if (!modalDayUnlocked) {

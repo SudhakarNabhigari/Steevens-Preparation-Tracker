@@ -19,6 +19,7 @@ import {
   fetchTrackBriefFromSupabase,
   generateTrackDailyCanonical,
   getIstScheduleSnapshotCanonical,
+  LEGACY_GUEST_START_DATE_IST,
   isSupabaseServerConfigured,
   isTrackDayCurrentlyUnlockedCanonical,
   sendDailyEmailViaResend,
@@ -209,9 +210,10 @@ async function tryDelegateToSupabaseEdgeFunction(body: Record<string, unknown>):
 export async function generateTrackDailyResources(
   trackId: TrackId,
   dayNumber: number,
-  options?: { forceRefresh?: boolean; persistToCloud?: boolean }
+  options?: { forceRefresh?: boolean; persistToCloud?: boolean; role?: 'owner' | 'guest' }
 ): Promise<TrackDailyAiResources> {
-  if (!isTrackDayCurrentlyUnlockedCanonical(trackId, dayNumber)) {
+  const scheduleStartIsoIst = options?.role === 'guest' ? LEGACY_GUEST_START_DATE_IST : undefined;
+  if (!isTrackDayCurrentlyUnlockedCanonical(trackId, dayNumber, Date.now(), scheduleStartIsoIst)) {
     throw new Error(
       `LOCKED_FUTURE_DAY: ${trackId.toUpperCase()} Day ${dayNumber} unlocks at 00:00 IST on its scheduled date.`
     );
@@ -234,15 +236,19 @@ export async function generateTrackDailyResources(
 
   const key = getCacheKey(trackId, dayNumber);
   const store = await readLocalDevStore();
+  const expectedPlanDate = buildDeterministicReadOnlyTrack(trackId, dayNumber, config, undefined, scheduleStartIsoIst)?.planDate;
   const existingCached =
     (isSupabaseServerConfigured(config)
-      ? await fetchTrackBriefFromSupabase(trackId, dayNumber, config)
+      ? await fetchTrackBriefFromSupabase(trackId, dayNumber, config, options?.role || 'owner')
       : null) || store.resourcesByKey[key] || null;
+  const currentCycleCached = existingCached?.planDate === expectedPlanDate ? existingCached : null;
 
   const result = (await generateTrackDailyCanonical(trackId, dayNumber, config, {
     forceRefresh: options?.forceRefresh,
     persistToCloud: options?.persistToCloud,
-    existingCached
+    existingCached: currentCycleCached,
+    scheduleStartIsoIst,
+    role: options?.role || 'owner'
   })) as TrackDailyAiResources;
 
   if (!ephemeral) {
@@ -257,8 +263,10 @@ export async function getDailyResourcesDashboard(options?: {
   track?: TrackId;
   day?: number;
   forceRefresh?: boolean;
+  role?: 'owner' | 'guest';
 }): Promise<DailyResourcesDashboardPayload> {
-  const snapshot = getIstScheduleSnapshotCanonical();
+  const scheduleStartIsoIst = options?.role === 'guest' ? LEGACY_GUEST_START_DATE_IST : undefined;
+  const snapshot = getIstScheduleSnapshotCanonical(Date.now(), scheduleStartIsoIst);
   const config = await getResolvedServerPipelineConfig();
   const ephemeral = isEphemeralServerlessRuntime();
   const sbConfigured = isSupabaseServerConfigured(config);
@@ -276,16 +284,18 @@ export async function getDailyResourcesDashboard(options?: {
     if (ephemeral) {
       // Production / Vercel GET: read Supabase first, otherwise deterministic read-only view (zero file cache / zero server mutations)
       if (sbConfigured && !(options?.forceRefresh && options?.track === trackId)) {
-        const fromDb = await fetchTrackBriefFromSupabase(trackId, dayNumber, config);
-        if (fromDb) return fromDb as TrackDailyAiResources;
+        const fromDb = await fetchTrackBriefFromSupabase(trackId, dayNumber, config, options?.role || 'owner');
+        const expectedPlanDate = buildDeterministicReadOnlyTrack(trackId, dayNumber, config, undefined, scheduleStartIsoIst)?.planDate;
+        if (fromDb?.planDate === expectedPlanDate) return fromDb as TrackDailyAiResources;
       }
-      return buildDeterministicReadOnlyTrack(trackId, dayNumber, config) as TrackDailyAiResources | null;
+      return buildDeterministicReadOnlyTrack(trackId, dayNumber, config, undefined, scheduleStartIsoIst) as TrackDailyAiResources | null;
     }
 
     // Local dev mode: use shared canonical pipeline + local cache
     return generateTrackDailyResources(trackId, dayNumber, {
       forceRefresh: options?.forceRefresh && options?.track === trackId,
-      persistToCloud: false
+      persistToCloud: false,
+      role: options?.role || 'owner'
     });
   };
 

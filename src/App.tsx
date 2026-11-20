@@ -18,12 +18,17 @@ import { ResourceLibraryPage } from './components/ResourceLibraryPage';
 import { DoubtNotebookPage } from './components/DoubtNotebookPage';
 import { PreparationCalendarPage } from './components/PreparationCalendarPage';
 import { DailyAiResourcesPage } from './components/DailyAiResourcesPage';
+import { RelaunchScreen } from './components/RelaunchScreen';
 
 const AppContent: React.FC = () => {
-  const { state, currentPage } = useApp();
+  const { state, currentPage, userRole, isPreparationLocked, ownerRelaunchTransitionReady } = useApp();
 
   if (!state.isAuthenticated) {
     return <LoginScreen />;
+  }
+
+  if (userRole === 'owner' && (isPreparationLocked || !ownerRelaunchTransitionReady)) {
+    return <RelaunchScreen />;
   }
 
   const renderCurrentView = () => {
@@ -77,7 +82,7 @@ const AppContent: React.FC = () => {
             STEEVEN'S 180-DAY PREPARATION TRACKER · Main (180d) · DSA in C++ (100d) · Azure (100d)
           </span>
           <span className="font-mono">
-            16 November 2026 – 14 May 2027 · Asia/Kolkata (IST)
+            {userRole === 'owner' ? '23 November 2026 – 21 May 2027' : '16 November 2026 – 14 May 2027'} · Asia/Kolkata (IST)
           </span>
         </div>
       </footer>

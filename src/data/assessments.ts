@@ -1,5 +1,5 @@
 import { Assessment, AssessmentMetadataSummary } from '../types';
-import { isAssessmentUnlockedByIstClock, isValidAssessmentWeek } from '../utils/assessmentLock';
+import { getWeekUnlockIsoIst, isAssessmentUnlockedByIstClock, isValidAssessmentWeek, PREPARATION_START_ISO_IST } from '../utils/assessmentLock';
 import { WEEKS_01_TO_06_ASSESSMENTS } from './assessments/weeks01to06';
 import { WEEKS_07_TO_13_ASSESSMENTS } from './assessments/weeks07to13';
 import { WEEKS_14_TO_20_ASSESSMENTS } from './assessments/weeks14to20';
@@ -12,7 +12,7 @@ export const WEEKLY_ASSESSMENTS: Assessment[] = [
   ...WEEKS_21_TO_26_ASSESSMENTS
 ].sort((a, b) => a.weekNumber - b.weekNumber);
 
-export function getAssessmentMetadataForWeek(weekNumber: number): AssessmentMetadataSummary | null {
+export function getAssessmentMetadataForWeek(weekNumber: number, startIsoIst?: string): AssessmentMetadataSummary | null {
   if (!isValidAssessmentWeek(weekNumber)) return null;
   const found = WEEKLY_ASSESSMENTS.find(a => a.weekNumber === weekNumber);
   if (!found) return null;
@@ -25,13 +25,19 @@ export function getAssessmentMetadataForWeek(weekNumber: number): AssessmentMeta
     q => q.type === 'short_answer' || q.type === 'architecture'
   ).length;
 
+  const unlockIsoIst = startIsoIst && startIsoIst !== PREPARATION_START_ISO_IST
+    ? getWeekUnlockIsoIst(weekNumber, startIsoIst)
+    : found.unlockIsoIst;
+  const scheduledDate = startIsoIst && startIsoIst !== PREPARATION_START_ISO_IST
+    ? new Date(unlockIsoIst).toLocaleDateString('en-GB', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric' })
+    : found.scheduledDate;
   return {
     weekNumber: found.weekNumber,
     title: found.title,
     moduleTitle: found.moduleTitle,
     scheduledDayNumber: found.scheduledDayNumber,
-    scheduledDate: found.scheduledDate,
-    unlockIsoIst: found.unlockIsoIst,
+    scheduledDate,
+    unlockIsoIst,
     studyWindow: found.studyWindow,
     durationMinutes: found.durationMinutes,
     topicsCovered: found.topicsCovered,
@@ -48,8 +54,8 @@ export function getAssessmentMetadataForWeek(weekNumber: number): AssessmentMeta
   };
 }
 
-export function getAllAssessmentMetadata(): AssessmentMetadataSummary[] {
-  return WEEKLY_ASSESSMENTS.map(a => getAssessmentMetadataForWeek(a.weekNumber)!);
+export function getAllAssessmentMetadata(startIsoIst?: string): AssessmentMetadataSummary[] {
+  return WEEKLY_ASSESSMENTS.map(a => getAssessmentMetadataForWeek(a.weekNumber, startIsoIst)!);
 }
 
 /**
@@ -58,12 +64,20 @@ export function getAllAssessmentMetadata(): AssessmentMetadataSummary[] {
  */
 export function getUnlockedAssessmentForWeek(
   weekNumber: number,
-  nowMs: number = Date.now()
+  nowMs: number = Date.now(),
+  startIsoIst?: string
 ): Assessment | null {
-  if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs)) {
+  if (!isAssessmentUnlockedByIstClock(weekNumber, nowMs, startIsoIst)) {
     return null;
   }
-  return WEEKLY_ASSESSMENTS.find(a => a.weekNumber === weekNumber) || null;
+  const assessment = WEEKLY_ASSESSMENTS.find(a => a.weekNumber === weekNumber);
+  if (!assessment) return null;
+  if (!startIsoIst || startIsoIst === PREPARATION_START_ISO_IST) return assessment;
+  const unlockIsoIst = getWeekUnlockIsoIst(weekNumber, startIsoIst);
+  const scheduledDate = new Date(unlockIsoIst).toLocaleDateString('en-GB', {
+    timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short', year: 'numeric'
+  });
+  return { ...assessment, scheduledDate, unlockIsoIst };
 }
 
 /**

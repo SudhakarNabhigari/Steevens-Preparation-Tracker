@@ -15,6 +15,7 @@ import {
   buildDeterministicReadOnlyTrack,
   discoverYouTubeTutorials,
   FREE_TIER_GEMINI_MODEL,
+  LEGACY_GUEST_START_DATE_IST,
   generateTrackDailyCanonical,
   getIstScheduleSnapshotCanonical,
   isValidHttpsUrl,
@@ -133,14 +134,14 @@ test('Step 1: Unmarking tasks/days/AI resources in newer state persists across o
 // STEP 2: YOUTUBE SEARCH+VIDEOS DISCOVERY, PRIVACY FILTERING & SECRET REDACTION
 // ============================================================================
 test('Step 2: YouTube discovery verifies public videos, strips private videos, redacts secrets on 400/403, and avoids redundant calls on cache hit', async () => {
-  const ctx = getSharedCurriculumDayContext('dsa', 2);
+  const ctx = getSharedCurriculumDayContext('azure', 2);
   assert.ok(ctx);
 
-  // 1. Missing API key returns labelled search fallback without inventing video IDs
+  // 1. Missing API key fails closed without inventing topic recommendations
   const noKey = await discoverYouTubeTutorials(ctx, '');
-  assert.equal(noKey.providerStatus, 'search_fallback_no_key');
-  assert.equal(noKey.tutorials.length, 3);
-  assert.ok(noKey.tutorials.every((t) => !t.isVerifiedVideo && t.url.includes('youtube.com/results?search_query=')));
+  assert.equal(noKey.providerStatus, 'unavailable');
+  assert.equal(noKey.tutorials.length, 0);
+  assert.match(noKey.statusNote, /No suitable video found/);
 
   // 2. Successful 2-step lookup filters private video and keeps verified metadata
   let fetchCount = 0;
@@ -151,8 +152,8 @@ test('Step 2: YouTube discovery verifies public videos, strips private videos, r
       return new Response(
         JSON.stringify({
           items: [
-            { id: { videoId: 'pub12345678' } },
-            { id: { videoId: 'prv87654321' } },
+            { id: { videoId: 'pub12345678' }, snippet: { channelId: 'UC0m-80FnNY2Qb7obvTL_2fA' } },
+            { id: { videoId: 'prv87654321' }, snippet: { channelId: 'UC0m-80FnNY2Qb7obvTL_2fA' } },
             { id: { videoId: 'bad_short' } } // invalid <11 chars ignored
           ]
         }),
@@ -166,9 +167,11 @@ test('Step 2: YouTube discovery verifies public videos, strips private videos, r
             {
               id: 'pub12345678',
               snippet: {
-                title: 'C++ Arrays & Prefix Sum Full Tutorial',
-                channelTitle: 'Striver C++',
-                description: 'Detailed walkthrough of arrays and time complexity.',
+                title: `${ctx.topic} Explained with Microsoft Azure`,
+                channelTitle: 'Microsoft Azure',
+                channelId: 'UC0m-80FnNY2Qb7obvTL_2fA',
+                defaultAudioLanguage: 'en',
+                description: `Official educational walkthrough of ${ctx.topic} and Azure architecture.`,
                 thumbnails: { high: { url: 'https://i.ytimg.com/vi/pub12345678/hqdefault.jpg' } }
               },
               contentDetails: { duration: 'PT1H02M05S' },
@@ -177,8 +180,9 @@ test('Step 2: YouTube discovery verifies public videos, strips private videos, r
             {
               id: 'prv87654321',
               snippet: {
-                title: 'Private Draft Video',
-                channelTitle: 'HiddenChannel'
+                title: `${ctx.topic} Private Draft Video`,
+                channelTitle: 'Microsoft Azure',
+                channelId: 'UC0m-80FnNY2Qb7obvTL_2fA'
               },
               contentDetails: { duration: 'PT10M00S' },
               status: { privacyStatus: 'private' }
@@ -188,11 +192,14 @@ test('Step 2: YouTube discovery verifies public videos, strips private videos, r
         { status: 200 }
       );
     }
+    if (urlStr.includes('/youtube/v3/channels')) {
+      return new Response(JSON.stringify({ items: [{ id: 'UC0m-80FnNY2Qb7obvTL_2fA', snippet: { title: 'Microsoft Azure', description: 'Official Microsoft Azure educational tutorials and training.' }, statistics: { subscriberCount: '1000000', videoCount: '5000' } }] }), { status: 200 });
+    }
     return new Response(null, { status: 404 });
   };
 
   const verified = await discoverYouTubeTutorials(ctx, 'AIzaSyFakeSecretValueForTesting123456', okYouTubeFetch);
-  assert.equal(fetchCount, 2);
+  assert.equal(fetchCount, 6);
   assert.equal(verified.providerStatus, 'youtube_api_verified');
   assert.equal(verified.tutorials.length, 1);
   assert.equal(verified.tutorials[0].videoId, 'pub12345678');
@@ -212,16 +219,16 @@ test('Step 2: YouTube discovery verifies public videos, strips private videos, r
       { status: 400 }
     );
   const redactedFallback = await discoverYouTubeTutorials(ctx, 'AIzaSyLeakedSecretKeyValue1234567890', errYouTubeFetch);
-  assert.equal(redactedFallback.providerStatus, 'search_fallback_quota');
+  assert.equal(redactedFallback.providerStatus, 'unavailable');
   assert.equal(redactedFallback.statusNote.includes('AIzaSyLeakedSecret'), false);
-  assert.ok(redactedFallback.statusNote.includes('[REDACTED]'));
+  assert.match(redactedFallback.statusNote, /No suitable video found/);
 
   // 4. Network rejection fallback
   const throwFetch: typeof fetch = async () => {
     throw new Error('Request failed for key=AIzaSyThrownSecretKey123456789012');
   };
   const netFallback = await discoverYouTubeTutorials(ctx, 'AIzaSyThrownSecretKey123456789012', throwFetch);
-  assert.equal(netFallback.providerStatus, 'search_fallback_quota');
+  assert.equal(netFallback.providerStatus, 'unavailable');
   assert.equal(netFallback.statusNote.includes('AIzaSyThrownSecret'), false);
 
   // 5. Cache hit avoids external YouTube & Gemini requests
@@ -247,6 +254,7 @@ test('Step 2: YouTube discovery verifies public videos, strips private videos, r
     {
       forceRefresh: false,
       skipExternalNetworkChecks: true,
+      scheduleStartIsoIst: LEGACY_GUEST_START_DATE_IST,
       existingCached: {
         ...day2Deterministic,
         aiProviderStatus: 'gemini_generated',
@@ -353,19 +361,19 @@ test('Step 4: Daily AI brief enrichment handles Main/DSA/Azure independently and
       'main',
       1,
       { geminiApiKey: 'test-key', geminiCaller: mockGeminiCaller },
-      { forceRefresh: true, skipExternalNetworkChecks: true }
+      { forceRefresh: true, skipExternalNetworkChecks: true, scheduleStartIsoIst: LEGACY_GUEST_START_DATE_IST }
     ),
     generateTrackDailyCanonical(
       'dsa',
       1,
       { geminiApiKey: 'test-key', geminiCaller: mockGeminiCaller },
-      { forceRefresh: true, skipExternalNetworkChecks: true }
+      { forceRefresh: true, skipExternalNetworkChecks: true, scheduleStartIsoIst: LEGACY_GUEST_START_DATE_IST }
     ),
     generateTrackDailyCanonical(
       'azure',
       1,
       { geminiApiKey: 'test-key', geminiCaller: mockGeminiCaller },
-      { forceRefresh: true, skipExternalNetworkChecks: true }
+      { forceRefresh: true, skipExternalNetworkChecks: true, scheduleStartIsoIst: LEGACY_GUEST_START_DATE_IST }
     )
   ]);
 
@@ -391,6 +399,7 @@ test('Step 4: Daily AI brief enrichment handles Main/DSA/Azure independently and
     {
       forceRefresh: true,
       skipExternalNetworkChecks: true,
+      scheduleStartIsoIst: LEGACY_GUEST_START_DATE_IST,
       existingCached: mainGen
     }
   );
@@ -403,7 +412,7 @@ test('Step 4: Daily AI brief enrichment handles Main/DSA/Azure independently and
 // STEP 5: EMAIL CHECKLIST REAL KEY MATCHING & RESEND RETRY/ERROR CLASSIFICATION
 // ============================================================================
 test('Step 5: Email checklist respects real app task keys and sendDailyEmailViaResend retries transients with same Idempotency-Key', async () => {
-  const istSnap = getIstScheduleSnapshotCanonical(new Date('2026-11-18T10:00:00+05:30').getTime());
+  const istSnap = getIstScheduleSnapshotCanonical(new Date('2026-11-18T10:00:00+05:30').getTime(), LEGACY_GUEST_START_DATE_IST);
   const main = buildDeterministicReadOnlyTrack('main', 1, {});
   const dsa = buildDeterministicReadOnlyTrack('dsa', 1, {});
   const azure = buildDeterministicReadOnlyTrack('azure', 1, {});

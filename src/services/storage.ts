@@ -8,7 +8,7 @@ import {
   LeetCodeProgressEntry,
   ActiveAssessmentAttempt
 } from '../types';
-import { isAssessmentUnlockedByIstClock } from '../utils/assessmentLock';
+import { isAssessmentUnlockedByIstClock, PREPARATION_START_ISO_IST } from '../utils/assessmentLock';
 
 export const OWNER_STORAGE_KEY = 'steeven_180day_prep_owner_permanent_v3';
 export const GUEST_STORAGE_KEY = 'steeven_180day_prep_guest_sandbox_v3';
@@ -516,7 +516,8 @@ function sanitizeLockedAssessmentState(
   submissions: Record<number, AssessmentSubmission> | undefined,
   leetcodeProgress: Record<string, LeetCodeProgressEntry> | undefined,
   activeAttempt: ActiveAssessmentAttempt | null | undefined,
-  nowMs: number
+  nowMs: number,
+  startIsoIst: string
 ): {
   assessmentSubmissions: Record<number, AssessmentSubmission>;
   leetcodeProgress: Record<string, LeetCodeProgressEntry>;
@@ -526,7 +527,7 @@ function sanitizeLockedAssessmentState(
   if (submissions && typeof submissions === 'object') {
     for (const [k, v] of Object.entries(submissions)) {
       const wk = Number(k);
-      if (isAssessmentUnlockedByIstClock(wk, nowMs) && v) {
+      if (isAssessmentUnlockedByIstClock(wk, nowMs, startIsoIst) && v) {
         cleanSubmissions[wk] = v;
       }
     }
@@ -537,14 +538,14 @@ function sanitizeLockedAssessmentState(
     for (const [probId, entry] of Object.entries(leetcodeProgress)) {
       const match = /^w(\d+)_/.exec(probId);
       const wk = match ? Number(match[1]) : 0;
-      if (wk > 0 && isAssessmentUnlockedByIstClock(wk, nowMs) && entry) {
+      if (wk > 0 && isAssessmentUnlockedByIstClock(wk, nowMs, startIsoIst) && entry) {
         cleanLeetcode[probId] = entry;
       }
     }
   }
 
   const cleanAttempt =
-    activeAttempt && isAssessmentUnlockedByIstClock(activeAttempt.weekNumber, nowMs)
+    activeAttempt && isAssessmentUnlockedByIstClock(activeAttempt.weekNumber, nowMs, startIsoIst)
       ? activeAttempt
       : null;
 
@@ -568,7 +569,10 @@ export function hydrateUserState(
     parsed.assessmentSubmissions,
     parsed.leetcodeProgress,
     parsed.activeAssessmentAttempt,
-    nowMs
+    nowMs,
+    role === 'owner' && parsed.preparationCycleStartIsoIst
+      ? parsed.preparationCycleStartIsoIst
+      : PREPARATION_START_ISO_IST
   );
 
   const baseHydrated: UserState = {
@@ -776,62 +780,75 @@ export function mergeOwnerStatesSafely(
 
   const localMs = parseIsoEpochMs(cleanLocal.lastSavedTimestamp);
   const cloudMs = parseIsoEpochMs(cleanCloud.lastSavedTimestamp);
-  const localIsNewer = localMs >= cloudMs;
+  const hasRelaunchCycle = (state: UserState) => state.preparationCycleId === 'owner-cycle-2026-11-23';
+  const cycleBoundaryMismatch = hasRelaunchCycle(cleanLocal) !== hasRelaunchCycle(cleanCloud);
+  const localIsNewer = cycleBoundaryMismatch
+    ? hasRelaunchCycle(cleanLocal)
+    : localMs >= cloudMs;
   const conflictDetected = localMs > 0 && cloudMs > 0 && Math.abs(localMs - cloudMs) > 1000;
 
   const primary = localIsNewer ? cleanLocal : cleanCloud;
   const secondary = localIsNewer ? cleanCloud : cleanLocal;
 
   // Main Plan merge: preserve explicit unmarks from newer primary, backfill untouched completions from secondary
-  const completedTasks: Record<string, boolean> = {
-    ...secondary.completedTasks,
-    ...primary.completedTasks
-  };
-  for (const [k, v] of Object.entries(secondary.completedTasks)) {
-    if (v && primary.completedTasks[k] === undefined) completedTasks[k] = true;
+  const completedTasks: Record<string, boolean> = cycleBoundaryMismatch
+    ? { ...primary.completedTasks }
+    : { ...secondary.completedTasks, ...primary.completedTasks };
+  if (!cycleBoundaryMismatch) {
+    for (const [k, v] of Object.entries(secondary.completedTasks)) {
+      if (v && primary.completedTasks[k] === undefined) completedTasks[k] = true;
+    }
   }
 
-  const completedDays: Record<number, boolean> = {
-    ...secondary.completedDays,
-    ...primary.completedDays
-  };
-  for (const [k, v] of Object.entries(secondary.completedDays)) {
-    const day = Number(k);
-    if (v && primary.completedDays[day] === undefined) completedDays[day] = true;
+  const completedDays: Record<number, boolean> = cycleBoundaryMismatch
+    ? { ...primary.completedDays }
+    : { ...secondary.completedDays, ...primary.completedDays };
+  if (!cycleBoundaryMismatch) {
+    for (const [k, v] of Object.entries(secondary.completedDays)) {
+      const day = Number(k);
+      if (v && primary.completedDays[day] === undefined) completedDays[day] = true;
+    }
   }
 
-  const dayNotes: Record<number, string> = {
-    ...secondary.dayNotes,
-    ...primary.dayNotes
-  };
-  for (const [k, v] of Object.entries(secondary.dayNotes)) {
-    const day = Number(k);
-    if (v && !dayNotes[day]) dayNotes[day] = v;
+  const dayNotes: Record<number, string> = cycleBoundaryMismatch
+    ? { ...primary.dayNotes }
+    : { ...secondary.dayNotes, ...primary.dayNotes };
+  if (!cycleBoundaryMismatch) {
+    for (const [k, v] of Object.entries(secondary.dayNotes)) {
+      const day = Number(k);
+      if (v && !dayNotes[day]) dayNotes[day] = v;
+    }
   }
 
-  const studyTimeSeconds: Record<number, number> = { ...secondary.studyTimeSeconds };
-  for (const [k, v] of Object.entries(primary.studyTimeSeconds)) {
-    const day = Number(k);
-    studyTimeSeconds[day] = Math.max(studyTimeSeconds[day] || 0, Number(v) || 0);
+  const studyTimeSeconds: Record<number, number> = cycleBoundaryMismatch
+    ? { ...primary.studyTimeSeconds }
+    : { ...secondary.studyTimeSeconds };
+  if (!cycleBoundaryMismatch) {
+    for (const [k, v] of Object.entries(primary.studyTimeSeconds)) {
+      const day = Number(k);
+      studyTimeSeconds[day] = Math.max(studyTimeSeconds[day] || 0, Number(v) || 0);
+    }
   }
 
   // Assessments union (prefer newer submission if same week)
-  const assessmentSubmissions: Record<number, AssessmentSubmission> = {
-    ...secondary.assessmentSubmissions
-  };
-  for (const [k, sub] of Object.entries(primary.assessmentSubmissions)) {
-    const wk = Number(k);
-    const other = assessmentSubmissions[wk];
-    if (!other || parseIsoEpochMs(sub.submittedAt) >= parseIsoEpochMs(other.submittedAt)) {
-      assessmentSubmissions[wk] = sub;
+  const assessmentSubmissions: Record<number, AssessmentSubmission> = cycleBoundaryMismatch
+    ? { ...primary.assessmentSubmissions }
+    : { ...secondary.assessmentSubmissions };
+  if (!cycleBoundaryMismatch) {
+    for (const [k, sub] of Object.entries(primary.assessmentSubmissions)) {
+      const wk = Number(k);
+      const other = assessmentSubmissions[wk];
+      if (!other || parseIsoEpochMs(sub.submittedAt) >= parseIsoEpochMs(other.submittedAt)) {
+        assessmentSubmissions[wk] = sub;
+      }
     }
   }
 
   // LeetCode progress union (never lose completed=true or notes)
-  const leetcodeProgress: Record<string, LeetCodeProgressEntry> = {
-    ...secondary.leetcodeProgress
-  };
-  for (const [probId, entry] of Object.entries(primary.leetcodeProgress)) {
+  const leetcodeProgress: Record<string, LeetCodeProgressEntry> = cycleBoundaryMismatch
+    ? { ...primary.leetcodeProgress }
+    : { ...secondary.leetcodeProgress };
+  for (const [probId, entry] of Object.entries(cycleBoundaryMismatch ? {} : primary.leetcodeProgress)) {
     const other = leetcodeProgress[probId];
     if (!other) {
       leetcodeProgress[probId] = entry;
@@ -899,16 +916,24 @@ export function mergeOwnerStatesSafely(
     studyTimeSeconds,
     assessmentSubmissions,
     leetcodeProgress,
-    activeAssessmentAttempt: primary.activeAssessmentAttempt || secondary.activeAssessmentAttempt || null,
-    studyLogs: mergeArrayById(primary.studyLogs, secondary.studyLogs),
-    dsaProgress: mergeTrackProgressSafely(cleanLocal.dsaProgress, cleanCloud.dsaProgress, localIsNewer),
-    azureProgress: mergeTrackProgressSafely(cleanLocal.azureProgress, cleanCloud.azureProgress, localIsNewer),
+    activeAssessmentAttempt: cycleBoundaryMismatch
+      ? primary.activeAssessmentAttempt || null
+      : primary.activeAssessmentAttempt || secondary.activeAssessmentAttempt || null,
+    studyLogs: cycleBoundaryMismatch ? primary.studyLogs : mergeArrayById(primary.studyLogs, secondary.studyLogs),
+    dsaProgress: cycleBoundaryMismatch ? primary.dsaProgress : mergeTrackProgressSafely(cleanLocal.dsaProgress, cleanCloud.dsaProgress, localIsNewer),
+    azureProgress: cycleBoundaryMismatch ? primary.azureProgress : mergeTrackProgressSafely(cleanLocal.azureProgress, cleanCloud.azureProgress, localIsNewer),
     uploadedPdfs: mergedPdfs.map(p => ({ ...p, isActiveRoadmap: p.id === resolvedActivePdfId })),
     activePdfId: resolvedActivePdfId,
     resources: mergeArrayById(primary.resources, secondary.resources),
     doubtEntries: mergeArrayById(primary.doubtEntries, secondary.doubtEntries),
     sharedSettings: mergedSharedSettings,
-    dailyAiResourceCompletions,
+    dailyAiResourceCompletions: cycleBoundaryMismatch ? (primary.dailyAiResourceCompletions || {}) : dailyAiResourceCompletions,
+    preparationCycleId: primary.preparationCycleId,
+    preparationCycleStartIsoIst: primary.preparationCycleStartIsoIst,
+    preparationCycleHistory: mergeArrayById(
+      (cleanLocal.preparationCycleHistory || []).map((cycle) => ({ ...cycle, id: cycle.cycleId })),
+      (cleanCloud.preparationCycleHistory || []).map((cycle) => ({ ...cycle, id: cycle.cycleId }))
+    ).map(({ id: _id, ...cycle }) => cycle),
     lastSavedTimestamp: new Date(Math.max(localMs, cloudMs, nowMs)).toISOString()
   };
 

@@ -9,6 +9,7 @@ import { verifyOwnerAuthHeader } from '../server/auth.ts';
 import {
   buildDeterministicReadOnlyTrack,
   getIstScheduleSnapshotCanonical,
+  LEGACY_GUEST_START_DATE_IST,
   isTrackDayCurrentlyUnlockedCanonical,
   validateDsaLeetCodeTriplet,
   verifyCronRequest
@@ -187,7 +188,7 @@ test('3. Guest or wrong user JWT cannot access Owner-only endpoints (403)', asyn
   }
 });
 
-test('4. Verified Owner JWT passes verification and accesses permitted operations', async () => {
+test('4. Verified Owner JWT passes verification while pre-launch progress writes remain locked', async () => {
   const mockOwnerJwtFetch: typeof fetch = async () =>
     new Response(
       JSON.stringify({ id: 'owner-uuid-1111', email: 'owner@example.com' }),
@@ -228,11 +229,9 @@ test('4. Verified Owner JWT passes verification and accesses permitted operation
       },
       body: JSON.stringify({ trackId: 'main', dayNumber: 1 })
     });
-    assert.equal(refreshResp.status, 200);
-    const body = (await refreshResp.json()) as { ok: boolean; track?: { trackId: string; planDay: number } };
-    assert.equal(body.ok, true);
-    assert.equal(body.track?.trackId, 'main');
-    assert.equal(body.track?.planDay, 1);
+    assert.equal(refreshResp.status, 403, 'Owner refresh remains locked until the approved Day 1 launch.');
+    const body = (await refreshResp.json()) as { error: string };
+    assert.match(body.error, /locked until its scheduled IST unlock date/i);
   } finally {
     if (prevVercel === undefined) delete process.env.VERCEL;
     else process.env.VERCEL = prevVercel;
@@ -407,7 +406,7 @@ test('11. IST day locks and 26-week assessment locks remain strictly enforced', 
   const port = (server.address() as AddressInfo).port;
   try {
     const futureDayResp = await fetch(
-      `http://127.0.0.1:${port}/api/daily-resources?track=main&day=180`
+      `http://127.0.0.1:${port}/api/daily-resources?track=main&day=180&role=guest`
     );
     assert.equal(futureDayResp.status, 403);
   } finally {
@@ -497,7 +496,7 @@ test('14. PDF magic-header validation and Roadmap PDF URL resolution remain func
   assert.equal(inlineDataUrl, 'data:application/pdf;base64,JVBERi0xLjQ=');
 
   // Verify IST snapshot sanity
-  const snap = getIstScheduleSnapshotCanonical(new Date('2026-11-17T10:00:00+05:30').getTime());
+  const snap = getIstScheduleSnapshotCanonical(new Date('2026-11-17T10:00:00+05:30').getTime(), LEGACY_GUEST_START_DATE_IST);
   assert.equal(snap.istDate, '2026-11-17');
   assert.equal(snap.istHour, 10);
   assert.equal(snap.unlockedDays.main, 2);

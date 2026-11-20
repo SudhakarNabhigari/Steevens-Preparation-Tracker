@@ -65,6 +65,7 @@ export const StudyHistoryPage: React.FC = () => {
   const totalMainSecs = mainStudyDays.reduce((s, r) => s + r.seconds, 0);
   const totalDsaSecs = dsaStudyDays.reduce((s, r) => s + r.seconds, 0);
   const totalAzureSecs = azureStudyDays.reduce((s, r) => s + r.seconds, 0);
+  const archivedCycles = state.preparationCycleHistory || [];
 
   const combinedRecords = [...mainStudyDays, ...dsaStudyDays, ...azureStudyDays]
     .filter(r => trackFilter === 'all' || r.track === trackFilter)
@@ -161,6 +162,38 @@ export const StudyHistoryPage: React.FC = () => {
           </p>
         </div>
       </div>
+
+      {archivedCycles.length > 0 && (
+        <section className="space-y-3 rounded-2xl border border-[#E0DCD3] bg-white p-5 shadow-sm">
+          <div>
+            <h2 className="text-base font-bold text-[#292929]">Archived Preparation Cycles</h2>
+            <p className="mt-1 text-xs text-[#78716C]">Previous progress remains saved separately from the active cycle.</p>
+          </div>
+          {archivedCycles.map((cycle) => {
+            const mainHours = Object.values(cycle.main.studyTimeSeconds).reduce((sum, seconds) => sum + (Number(seconds) || 0), 0);
+            const dsaHours = Object.values(cycle.dsa.studyTimeSeconds).reduce((sum, seconds) => sum + (Number(seconds) || 0), 0);
+            const azureHours = Object.values(cycle.azure.studyTimeSeconds).reduce((sum, seconds) => sum + (Number(seconds) || 0), 0);
+            const completedDays = Object.values(cycle.main.completedDays).filter(Boolean).length +
+              Object.values(cycle.dsa.completedDays).filter(Boolean).length +
+              Object.values(cycle.azure.completedDays).filter(Boolean).length;
+            const noteCount = Object.keys(cycle.main.dayNotes).length + Object.keys(cycle.dsa.dayNotes).length + Object.keys(cycle.azure.dayNotes).length;
+            return (
+              <div key={cycle.cycleId} className="rounded-xl border border-[#E0DCD3] bg-[#FAF8F5] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-bold text-[#292929]">{cycle.cycleId === 'owner-cycle-2026-11-16' ? 'Previous cycle · 16 Nov 2026' : cycle.cycleId}</span>
+                  <span className="text-[11px] text-[#78716C]">Archived {new Date(cycle.archivedAt).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata' })} IST</span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[#625D56]">
+                  <span>{completedDays} completed days across all plans</span>
+                  <span>{formatDuration(mainHours + dsaHours + azureHours)} tracked</span>
+                  <span>{noteCount} saved day notes</span>
+                  <span>{Object.keys(cycle.main.assessmentSubmissions).length} assessment submissions</span>
+                </div>
+              </div>
+            );
+          })}
+        </section>
+      )}
 
       {/* Session Logs List with Track Filter */}
       <div className="space-y-4">

@@ -15,9 +15,9 @@ export function isValidPrepDay(dayNumber: number, maxDay: number = MAIN_TRACK_MA
  * Day 1 => 2026-11-16T00:00:00+05:30
  * Day 2 => 2026-11-17T00:00:00+05:30
  */
-export function getDayUnlockIsoIst(dayNumber: number, maxDay: number = MAIN_TRACK_MAX_DAYS): string {
+export function getDayUnlockIsoIst(dayNumber: number, maxDay: number = MAIN_TRACK_MAX_DAYS, startIsoIst: string = DAILY_PREPARATION_START_ISO_IST): string {
   const safeDay = isValidPrepDay(dayNumber, maxDay) ? dayNumber : 1;
-  const unlockEpoch = START_EPOCH_MS + (safeDay - 1) * DAY_MS;
+  const unlockEpoch = new Date(startIsoIst).getTime() + (safeDay - 1) * DAY_MS;
   const istShifted = new Date(unlockEpoch + IST_OFFSET_MS);
   const year = istShifted.getUTCFullYear();
   const month = String(istShifted.getUTCMonth() + 1).padStart(2, '0');
@@ -25,12 +25,12 @@ export function getDayUnlockIsoIst(dayNumber: number, maxDay: number = MAIN_TRAC
   return `${year}-${month}-${day}T00:00:00+05:30`;
 }
 
-export function getDayUnlockEpochMs(dayNumber: number, maxDay: number = MAIN_TRACK_MAX_DAYS): number {
-  return new Date(getDayUnlockIsoIst(dayNumber, maxDay)).getTime();
+export function getDayUnlockEpochMs(dayNumber: number, maxDay: number = MAIN_TRACK_MAX_DAYS, startIsoIst: string = DAILY_PREPARATION_START_ISO_IST): number {
+  return new Date(getDayUnlockIsoIst(dayNumber, maxDay, startIsoIst)).getTime();
 }
 
-export function getDayUnlockDateLabelIst(dayNumber: number, maxDay: number = MAIN_TRACK_MAX_DAYS): string {
-  const unlockMs = getDayUnlockEpochMs(dayNumber, maxDay);
+export function getDayUnlockDateLabelIst(dayNumber: number, maxDay: number = MAIN_TRACK_MAX_DAYS, startIsoIst: string = DAILY_PREPARATION_START_ISO_IST): string {
+  const unlockMs = getDayUnlockEpochMs(dayNumber, maxDay, startIsoIst);
   return new Date(unlockMs).toLocaleDateString('en-GB', {
     timeZone: 'Asia/Kolkata',
     day: '2-digit',
@@ -39,8 +39,8 @@ export function getDayUnlockDateLabelIst(dayNumber: number, maxDay: number = MAI
   });
 }
 
-export function getDayUnlockDateTimeLabelIst(dayNumber: number, maxDay: number = MAIN_TRACK_MAX_DAYS): string {
-  return `${getDayUnlockDateLabelIst(dayNumber, maxDay)} · 00:00 IST`;
+export function getDayUnlockDateTimeLabelIst(dayNumber: number, maxDay: number = MAIN_TRACK_MAX_DAYS, startIsoIst: string = DAILY_PREPARATION_START_ISO_IST): string {
+  return `${getDayUnlockDateLabelIst(dayNumber, maxDay, startIsoIst)} · 00:00 IST`;
 }
 
 /**
@@ -50,10 +50,11 @@ export function getDayUnlockDateTimeLabelIst(dayNumber: number, maxDay: number =
 export function isDayUnlockedByIstClock(
   dayNumber: number,
   nowMs: number = Date.now(),
-  maxDay: number = MAIN_TRACK_MAX_DAYS
+  maxDay: number = MAIN_TRACK_MAX_DAYS,
+  startIsoIst: string = DAILY_PREPARATION_START_ISO_IST
 ): boolean {
   if (!isValidPrepDay(dayNumber, maxDay)) return false;
-  return nowMs >= getDayUnlockEpochMs(dayNumber, maxDay);
+  return nowMs >= getDayUnlockEpochMs(dayNumber, maxDay, startIsoIst);
 }
 
 /**
@@ -61,10 +62,12 @@ export function isDayUnlockedByIstClock(
  */
 export function getUnlockedDayCountByIstClock(
   nowMs: number = Date.now(),
-  maxDay: number = MAIN_TRACK_MAX_DAYS
+  maxDay: number = MAIN_TRACK_MAX_DAYS,
+  startIsoIst: string = DAILY_PREPARATION_START_ISO_IST
 ): number {
-  if (nowMs < START_EPOCH_MS) return 0;
-  const elapsedDays = Math.floor((nowMs - START_EPOCH_MS) / DAY_MS) + 1;
+  const startEpoch = new Date(startIsoIst).getTime();
+  if (nowMs < startEpoch) return 0;
+  const elapsedDays = Math.floor((nowMs - startEpoch) / DAY_MS) + 1;
   return Math.min(maxDay, Math.max(0, elapsedDays));
 }
 
@@ -73,9 +76,10 @@ export function getUnlockedDayCountByIstClock(
  */
 export function getCurrentIstScheduleDay(
   nowMs: number = Date.now(),
-  maxDay: number = MAIN_TRACK_MAX_DAYS
+  maxDay: number = MAIN_TRACK_MAX_DAYS,
+  startIsoIst: string = DAILY_PREPARATION_START_ISO_IST
 ): number {
-  return Math.max(1, getUnlockedDayCountByIstClock(nowMs, maxDay));
+  return Math.max(1, getUnlockedDayCountByIstClock(nowMs, maxDay, startIsoIst));
 }
 
 export interface DailyLockCountdown {
@@ -93,9 +97,10 @@ export interface DailyLockCountdown {
 export function getDayLockStatus(
   dayNumber: number,
   nowMs: number = Date.now(),
-  maxDay: number = MAIN_TRACK_MAX_DAYS
+  maxDay: number = MAIN_TRACK_MAX_DAYS,
+  startIsoIst: string = DAILY_PREPARATION_START_ISO_IST
 ): DailyLockCountdown {
-  const unlockIsoIst = getDayUnlockIsoIst(dayNumber, maxDay);
+  const unlockIsoIst = getDayUnlockIsoIst(dayNumber, maxDay, startIsoIst);
   const unlockMs = new Date(unlockIsoIst).getTime();
   const diff = Math.max(0, unlockMs - nowMs);
   const isUnlocked = isValidPrepDay(dayNumber, maxDay) && nowMs >= unlockMs;
@@ -113,7 +118,7 @@ export function getDayLockStatus(
     minutes,
     seconds,
     unlockIsoIst,
-    unlockDateLabelIst: getDayUnlockDateLabelIst(dayNumber, maxDay),
-    unlockLabelIst: getDayUnlockDateTimeLabelIst(dayNumber, maxDay)
+    unlockDateLabelIst: getDayUnlockDateLabelIst(dayNumber, maxDay, startIsoIst),
+    unlockLabelIst: getDayUnlockDateTimeLabelIst(dayNumber, maxDay, startIsoIst)
   };
 }

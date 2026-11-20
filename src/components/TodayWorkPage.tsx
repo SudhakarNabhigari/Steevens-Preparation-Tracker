@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import { ALL_180_DAYS } from '../data/syllabus';
 import { getDayLockStatus, MAIN_TRACK_MAX_DAYS } from '../utils/dailyLock';
+import { DAILY_PREPARATION_START_ISO_IST } from '../utils/dailyLock';
+import { OWNER_RELAUNCH_START_ISO_IST, shiftScheduleDate } from '../utils/relaunch';
 import {
   Clock,
   CheckCircle2,
@@ -39,9 +41,10 @@ export const TodayWorkPage: React.FC = () => {
     openDailyAiResources
   } = useApp();
 
-  const day = ALL_180_DAYS[selectedDayNumber - 1] || ALL_180_DAYS[0];
+  const baseDay = ALL_180_DAYS[selectedDayNumber - 1] || ALL_180_DAYS[0];
+  const day = userRole === 'owner' ? shiftScheduleDate(baseDay, 7) : baseDay;
   const isUnlocked = isDayUnlocked(day.dayNumber);
-  const lockStatus = getDayLockStatus(day.dayNumber, nowTimestamp, MAIN_TRACK_MAX_DAYS);
+  const lockStatus = getDayLockStatus(day.dayNumber, nowTimestamp, MAIN_TRACK_MAX_DAYS, userRole === 'owner' ? OWNER_RELAUNCH_START_ISO_IST : DAILY_PREPARATION_START_ISO_IST);
   const { completed, total, percentage } = getDayTaskCompletion(day.dayNumber);
   const status = getDayStatus(day.dayNumber);
 

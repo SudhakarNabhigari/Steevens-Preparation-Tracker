@@ -2,6 +2,16 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "crons": [
+    {
+      "path": "/api/relaunch/cron?type=restart",
+      "schedule": "30 4 21 11 *"
+    },
+    {
+      "path": "/api/relaunch/cron",
+      "schedule": "30 18 22 11 *"
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",

@@ -14,6 +14,8 @@ import {
 } from './server/dailyResourcesService.ts';
 import { applyApiSecurityAndCorsHeaders } from './server/httpCors.ts';
 import { isTrackDayCurrentlyUnlockedCanonical } from './supabase/functions/daily-learning-resources/pipeline.ts';
+import { verifyCronRequest, LEGACY_GUEST_START_DATE_IST } from './supabase/functions/daily-learning-resources/pipeline.ts';
+import { getRelaunchStatus, sendOwnerRelaunchAnnouncement } from './server/relaunchService.ts';
 
 const PORT = Number(process.env.PORT || 3000);
 const IS_PROD = process.env.NODE_ENV === 'production';
@@ -62,6 +64,51 @@ export async function createApp(options?: CreateAppOptions): Promise<Express> {
     });
   });
 
+  app.get('/api/relaunch/status', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+    res.json(getRelaunchStatus());
+  });
+
+  app.post('/api/relaunch/announcement', async (req, res) => {
+    const auth = await verifyOwner(req.headers.authorization, { allowCronSecret: false });
+    if (!auth.authorized) {
+      res.status(auth.status).json({ error: auth.error || 'Owner authentication required.' });
+      return;
+    }
+    if (req.body?.type !== 'restart') {
+      res.status(400).json({ error: 'Only the restart announcement can be requested here.' });
+      return;
+    }
+    try {
+      res.json(await sendOwnerRelaunchAnnouncement('restart'));
+    } catch (error) {
+      res.status(503).json({ error: error instanceof Error ? error.message : 'Announcement send failed.' });
+    }
+  });
+
+  app.all('/api/relaunch/cron', async (req, res) => {
+    const auth = verifyCronRequest(req.headers.authorization, process.env.CRON_SECRET);
+    if (!auth.authorized) {
+      res.status(auth.status).json({ error: auth.error });
+      return;
+    }
+    try {
+      const type = req.query.type === 'restart' ? 'restart' : req.query.type === 'launch' || req.query.type === undefined ? 'launch' : null;
+      if (!type) {
+        res.status(400).json({ error: 'Expected type=restart or type=launch.' });
+        return;
+      }
+      res.json({ ok: true, ...(await sendOwnerRelaunchAnnouncement(type)) });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Relaunch cron execution failed.';
+      if (message.includes('not available before')) {
+        res.json({ ok: true, status: 'before_launch' });
+      } else {
+        res.status(503).json({ error: message });
+      }
+    }
+  });
+
   app.post('/api/auth/verify-owner', async (req, res) => {
     try {
       const auth = await verifyOwner(req.headers.authorization, { allowCronSecret: false });
@@ -92,6 +139,15 @@ export async function createApp(options?: CreateAppOptions): Promise<Express> {
     try {
       const rawTrack = typeof req.query.track === 'string' ? req.query.track : undefined;
       const dayParam = typeof req.query.day === 'string' ? Number(req.query.day) : undefined;
+      const role = req.query.role === 'guest' ? 'guest' : 'owner';
+      if (role === 'owner') {
+        const auth = await verifyOwner(req.headers.authorization, { allowCronSecret: false });
+        if (!auth.authorized) {
+          res.status(auth.status).json({ error: auth.error });
+          return;
+        }
+      }
+      const scheduleStart = role === 'guest' ? LEGACY_GUEST_START_DATE_IST : undefined;
 
       if (rawTrack !== undefined && !isValidTrackId(rawTrack)) {
         res.status(400).json({ error: 'Invalid track query parameter. Expected main, dsa, or azure.' });
@@ -105,7 +161,7 @@ export async function createApp(options?: CreateAppOptions): Promise<Express> {
           res.status(400).json({ error: 'Invalid day query parameter.' });
           return;
         }
-        if (!isTrackDayCurrentlyUnlockedCanonical(validatedTrack, dayParam)) {
+        if (!isTrackDayCurrentlyUnlockedCanonical(validatedTrack, dayParam, Date.now(), scheduleStart)) {
           res.status(403).json({
             error: `Day ${dayParam} of ${validatedTrack.toUpperCase()} is locked until 00:00 IST on its scheduled date.`
           });
@@ -115,7 +171,8 @@ export async function createApp(options?: CreateAppOptions): Promise<Express> {
 
       const payload = await getDailyResourcesDashboard({
         track: validatedTrack,
-        day: dayParam
+        day: dayParam,
+        role
       });
 
       res.json(payload);
