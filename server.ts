@@ -15,7 +15,8 @@ import {
 import { applyApiSecurityAndCorsHeaders } from './server/httpCors.ts';
 import { isTrackDayCurrentlyUnlockedCanonical } from './supabase/functions/daily-learning-resources/pipeline.ts';
 import { verifyCronRequest, LEGACY_GUEST_START_DATE_IST } from './supabase/functions/daily-learning-resources/pipeline.ts';
-import { getRelaunchStatus, sendOwnerRelaunchAnnouncement } from './server/relaunchService.ts';
+import { getRelaunchStatus } from './server/relaunchStatus.ts';
+import { sendOwnerRelaunchAnnouncement } from './server/relaunchService.ts';
 
 const PORT = Number(process.env.PORT || 3000);
 const IS_PROD = process.env.NODE_ENV === 'production';

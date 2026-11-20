@@ -1,11 +1,18 @@
 import type { TrackProgressState, UserState } from '../types';
 import { DEFAULT_TRACK_PROGRESS } from '../services/storage';
+import {
+  OWNER_RELAUNCH_CYCLE_ID,
+  OWNER_RELAUNCH_START_ISO_IST,
+  OWNER_RELAUNCH_START_MS
+} from './relaunchConfig';
 
-export const OWNER_RELAUNCH_CYCLE_ID = 'owner-cycle-2026-11-23';
-export const OWNER_RELAUNCH_START_ISO_IST = '2026-11-23T00:00:00+05:30';
-export const OWNER_RELAUNCH_START_MS = Date.parse(OWNER_RELAUNCH_START_ISO_IST);
-export const OWNER_RESTART_EMAIL_EARLIEST_ISO_IST = '2026-11-21T10:00:00+05:30';
-export const OWNER_RESTART_EMAIL_EARLIEST_MS = Date.parse(OWNER_RESTART_EMAIL_EARLIEST_ISO_IST);
+export {
+  OWNER_RELAUNCH_CYCLE_ID,
+  OWNER_RELAUNCH_START_ISO_IST,
+  OWNER_RELAUNCH_START_MS,
+  OWNER_RESTART_EMAIL_EARLIEST_ISO_IST,
+  OWNER_RESTART_EMAIL_EARLIEST_MS
+} from './relaunchConfig';
 
 export interface ArchivedPreparationCycle {
   cycleId: string;

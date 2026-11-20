@@ -35,6 +35,7 @@ import {
   DAILY_PREPARATION_START_ISO_IST
 } from '../utils/dailyLock';
 import { createOwnerRelaunchCycle, isBeforeOwnerRelaunch, OWNER_RELAUNCH_CYCLE_ID, OWNER_RELAUNCH_START_ISO_IST, OWNER_RELAUNCH_START_MS } from '../utils/relaunch';
+import { isOfficialRelaunchStatus } from '../utils/relaunchConfig';
 import {
   applyRubricSelfReviewToSubmission,
   buildAssessmentSnapshot,
@@ -278,11 +279,11 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         const response = await fetch('/api/relaunch/status', { cache: 'no-store' });
         if (!response.ok) throw new Error('Relaunch time service unavailable');
-        const payload = await response.json() as { serverNow?: number };
-        if (!mounted || !Number.isFinite(payload.serverNow)) return;
-        serverTimeAnchorRef.current = { serverMs: Number(payload.serverNow), perfMs: performance.now() };
+        const payload: unknown = await response.json();
+        if (!mounted || !isOfficialRelaunchStatus(payload)) return;
+        serverTimeAnchorRef.current = { serverMs: payload.serverNow, perfMs: performance.now() };
         setOwnerRelaunchServerReady(true);
-        setNowTimestamp(Number(payload.serverNow));
+        setNowTimestamp(payload.serverNow);
       } catch {
         // Owner remains locked until the server supplies an authoritative time.
       }

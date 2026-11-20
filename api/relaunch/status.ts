@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { getRelaunchStatus } from '../../server/relaunchService.ts';
+import { getRelaunchStatus } from '../../server/relaunchStatus.ts';
 import { applyApiSecurityAndCorsHeaders } from '../../server/httpCors.ts';
 
 export default function handler(req: IncomingMessage, res: ServerResponse) {

@@ -1,27 +1,10 @@
 import {
-  OWNER_RELAUNCH_START_ISO_IST,
   OWNER_RELAUNCH_START_MS,
   OWNER_RESTART_EMAIL_EARLIEST_MS
-} from '../src/utils/relaunch.ts';
+} from '../src/utils/relaunchConfig.ts';
 import { getResolvedServerPipelineConfig } from './dailyResourcesService.ts';
 
 export type RelaunchEmailType = 'restart' | 'launch';
-
-export interface RelaunchStatus {
-  serverNow: number;
-  launchAt: number;
-  launchAtIso: string;
-  unlocked: boolean;
-}
-
-export function getRelaunchStatus(nowMs = Date.now()): RelaunchStatus {
-  return {
-    serverNow: nowMs,
-    launchAt: OWNER_RELAUNCH_START_MS,
-    launchAtIso: OWNER_RELAUNCH_START_ISO_IST,
-    unlocked: nowMs >= OWNER_RELAUNCH_START_MS
-  };
-}
 
 function remainingParts(nowMs: number) {
   const totalSeconds = Math.max(0, Math.floor((OWNER_RELAUNCH_START_MS - nowMs) / 1000));

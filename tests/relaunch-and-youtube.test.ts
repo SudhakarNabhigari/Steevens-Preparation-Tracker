@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
+import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createApp } from '../server.ts';
+import statusHandler from '../api/relaunch/status.ts';
 import { DEFAULT_GUEST_STATE, DEFAULT_OWNER_STATE, mergeOwnerStatesSafely } from '../src/services/storage.ts';
 import { getDayLockStatus } from '../src/utils/dailyLock.ts';
 import {
@@ -11,7 +13,9 @@ import {
   OWNER_RELAUNCH_START_MS,
   OWNER_RESTART_EMAIL_EARLIEST_MS
 } from '../src/utils/relaunch.ts';
-import { getRelaunchStatus, sendOwnerRelaunchAnnouncement } from '../server/relaunchService.ts';
+import { isOfficialRelaunchStatus, OWNER_RELAUNCH_START_ISO_IST } from '../src/utils/relaunchConfig.ts';
+import { getRelaunchStatus } from '../server/relaunchStatus.ts';
+import { sendOwnerRelaunchAnnouncement } from '../server/relaunchService.ts';
 import {
   APPROVED_AZURE_CHANNELS,
   APPROVED_CODING_CHANNELS,
@@ -173,6 +177,31 @@ test('Owner and Guest retain separate Day 1 lock dates and server time is author
   assert.match(getDayLockStatus(1, beforeLaunch, 180, '2026-11-23T00:00:00+05:30').unlockLabelIst, /23 Nov 2026/);
   assert.equal(getRelaunchStatus(beforeLaunch).unlocked, false);
   assert.equal(getRelaunchStatus(OWNER_RELAUNCH_START_MS).unlocked, true);
+});
+
+test('deployed status handler returns the validated public server clock without authentication', () => {
+  const headers: Record<string, string> = {};
+  let body = '';
+  const req = { method: 'GET', headers: {} } as IncomingMessage;
+  const res = {
+    statusCode: 0,
+    setHeader: (name: string, value: string) => { headers[name.toLowerCase()] = value; },
+    end: (chunk?: string) => { body = chunk || ''; }
+  } as unknown as ServerResponse;
+
+  statusHandler(req, res);
+  const payload: unknown = JSON.parse(body);
+  assert.equal(res.statusCode, 200);
+  assert.equal(headers['content-type'], 'application/json');
+  assert.equal(headers['cache-control'], 'no-store, max-age=0');
+  assert.equal(isOfficialRelaunchStatus(payload), true);
+  assert.equal((payload as { launchAtIso: string }).launchAtIso, OWNER_RELAUNCH_START_ISO_IST);
+  assert.equal((payload as { launchAt: number }).launchAt, OWNER_RELAUNCH_START_MS);
+  assert.equal(isOfficialRelaunchStatus({ ...(payload as object), launchAt: OWNER_RELAUNCH_START_MS + 1 }), false);
+
+  const wrongMethodResponse = { statusCode: 0, setHeader: () => undefined, end: (chunk?: string) => { body = chunk || ''; } } as unknown as ServerResponse;
+  statusHandler({ method: 'POST', headers: {} } as IncomingMessage, wrongMethodResponse);
+  assert.equal(wrongMethodResponse.statusCode, 405);
 });
 
 test('Owner daily-resource GET rejects unauthenticated role claims before loading resources', async () => {
