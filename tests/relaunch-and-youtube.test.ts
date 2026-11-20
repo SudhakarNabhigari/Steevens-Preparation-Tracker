@@ -204,6 +204,20 @@ test('deployed status handler returns the validated public server clock without 
   assert.equal(wrongMethodResponse.statusCode, 405);
 });
 
+test('Relaunch Back to Login signs out through existing auth flow without bypassing the Owner lock', () => {
+  const relaunchSource = readFileSync(new URL('../src/components/RelaunchScreen.tsx', import.meta.url), 'utf8');
+  const appSource = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  const contextSource = readFileSync(new URL('../src/context/AppContext.tsx', import.meta.url), 'utf8');
+
+  assert.match(relaunchSource, /onClick=\{logout\}/);
+  assert.match(relaunchSource, />\s*Back to Login\s*</);
+  assert.match(relaunchSource, /min-h-11 w-full[\s\S]*sm:w-auto/);
+  assert.ok(appSource.indexOf('if (!state.isAuthenticated)') < appSource.indexOf("if (userRole === 'owner' && (isPreparationLocked"));
+  assert.match(contextSource, /const logout = useCallback/);
+  assert.match(contextSource, /saveRoleStatePermanent\(pausedSnapshot\)/);
+  assert.match(contextSource, /setCurrentPage\('login'\)/);
+});
+
 test('Owner daily-resource GET rejects unauthenticated role claims before loading resources', async () => {
   const app = await createApp({
     attachFrontend: false,

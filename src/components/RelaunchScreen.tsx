@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { OWNER_RESTART_EMAIL_EARLIEST_MS } from '../utils/relaunch';
 
 export const RelaunchScreen: React.FC = () => {
-  const { lockTimeRemaining, ownerRelaunchServerReady, ownerRelaunchTransitionReady, nowTimestamp } = useApp();
+  const { lockTimeRemaining, ownerRelaunchServerReady, ownerRelaunchTransitionReady, nowTimestamp, logout } = useApp();
   const attemptedAtRef = useRef(0);
   const [announcementMessage, setAnnouncementMessage] = useState('');
 
@@ -67,6 +67,13 @@ export const RelaunchScreen: React.FC = () => {
         )}
         <p className="mt-7 text-sm text-[#625D56]">Main Plan, DSA in C++, and Azure Preparation will open on Day 1.</p>
         {announcementMessage && <p role="status" className="mt-3 text-xs text-[#78716C]">{announcementMessage}</p>}
+        <button
+          type="button"
+          onClick={logout}
+          className="mt-6 inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-[#D6D0C6] bg-white px-5 py-3 text-sm font-semibold text-[#292929] transition-colors hover:bg-[#F3EFE6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#78716C] focus-visible:ring-offset-2 sm:w-auto"
+        >
+          Back to Login
+        </button>
       </section>
     </main>
   );
