@@ -269,6 +269,22 @@ export async function loadFromIndexedDB<T = UserState>(key: string): Promise<T |
   });
 }
 
+export async function deleteFromIndexedDB(key: string): Promise<boolean> {
+  const db = await openDatabase();
+  if (!db) return false;
+  return new Promise(resolve => {
+    try {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).delete(key);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+      tx.onabort = () => resolve(false);
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 // ==========================================
 // SHARED OWNER CONTENT SYNC HELPERS
 // ==========================================
@@ -468,10 +484,62 @@ export function applySharedContentToGuestState(
     role: 'guest',
     username: 'Guest',
     passwordHash: '',
+    authVerifier: undefined,
+    cloudSyncMeta: undefined,
+    preparationCycleId: undefined,
+    preparationCycleStartIsoIst: undefined,
+    preparationCycleHistory: undefined,
+    simulationEnabled: false,
+    simulationDate: null,
     uploadedPdfs: sanitized.uploadedPdfs,
     activePdfId: sanitized.activePdfId,
     resources: sanitized.resources,
-    sharedSettings: sanitized.sharedSettings
+    sharedSettings: sanitized.sharedSettings,
+    guestSandboxInitialized: true
+  };
+}
+
+/** Merge new Owner-shared items into the Guest snapshot without replacing Guest edits. */
+export function mergeSharedContentIntoGuestState(
+  guestState: UserState,
+  shared: SharedOwnerContent
+): UserState {
+  const sanitized = sanitizeSharedContent(shared);
+  const removedPdfs = new Set(guestState.guestDeletedSharedPdfIds || []);
+  const removedResources = new Set(guestState.guestDeletedSharedResourceIds || []);
+  const pdfs = new Map(guestState.uploadedPdfs.map(pdf => [pdf.id, pdf]));
+  for (const pdf of sanitized.uploadedPdfs) {
+    if (!pdfs.has(pdf.id) && !removedPdfs.has(pdf.id)) pdfs.set(pdf.id, pdf);
+  }
+  const resources = new Map(guestState.resources.map(item => [item.id, item]));
+  for (const resource of sanitized.resources) {
+    if (!resources.has(resource.id) && !removedResources.has(resource.id)) resources.set(resource.id, resource);
+  }
+  const mergedPdfs = Array.from(pdfs.values());
+  const activePdfId = mergedPdfs.some(pdf => pdf.id === guestState.activePdfId)
+    ? guestState.activePdfId
+    : mergedPdfs.some(pdf => pdf.id === sanitized.activePdfId)
+      ? sanitized.activePdfId
+      : mergedPdfs[0]?.id || guestState.activePdfId;
+  return {
+    ...guestState,
+    role: 'guest',
+    username: 'Guest',
+    passwordHash: '',
+    authVerifier: undefined,
+    cloudSyncMeta: undefined,
+    preparationCycleId: undefined,
+    preparationCycleStartIsoIst: undefined,
+    preparationCycleHistory: undefined,
+    simulationEnabled: false,
+    simulationDate: null,
+    uploadedPdfs: mergedPdfs.map(pdf => ({ ...pdf, isActiveRoadmap: pdf.id === activePdfId })),
+    activePdfId,
+    resources: Array.from(resources.values()),
+    sharedSettings: guestState.guestSharedSettingsCustomized
+      ? guestState.sharedSettings
+      : sanitized.sharedSettings,
+    guestSandboxInitialized: true
   };
 }
 
@@ -622,6 +690,20 @@ export function hydrateUserState(
   };
 
   if (role === 'guest') {
+    if (parsed.guestSandboxInitialized) {
+      return mergeSharedContentIntoGuestState({
+        ...baseHydrated,
+        username: 'Guest',
+        passwordHash: '',
+        authVerifier: undefined,
+        cloudSyncMeta: undefined,
+        preparationCycleId: undefined,
+        preparationCycleStartIsoIst: undefined,
+        preparationCycleHistory: undefined,
+        simulationEnabled: false,
+        simulationDate: null
+      }, loadSharedContentSync());
+    }
     const shared = loadSharedContentSync();
     return applySharedContentToGuestState(baseHydrated, shared);
   }
@@ -653,7 +735,6 @@ export function loadRoleStateSync(role: 'owner' | 'guest'): UserState {
   }
 }
 
-// Strip shared-content-specific arrays when persisting Guest personal progress so Guest sandbox never becomes stale authority
 function buildGuestPersistPayload(state: UserState): UserState {
   return {
     ...state,
@@ -661,9 +742,13 @@ function buildGuestPersistPayload(state: UserState): UserState {
     username: 'Guest',
     passwordHash: '',
     authVerifier: undefined,
-    // Keep personal progress fields intact; shared content is always overlaid from SHARED_CONTENT_STORAGE_KEY
-    uploadedPdfs: [],
-    resources: []
+    cloudSyncMeta: undefined,
+    preparationCycleId: undefined,
+    preparationCycleStartIsoIst: undefined,
+    preparationCycleHistory: undefined,
+    simulationEnabled: false,
+    simulationDate: null,
+    guestSandboxInitialized: true
   };
 }
 
@@ -975,17 +1060,39 @@ export async function saveRoleStatePermanent(state: UserState): Promise<boolean>
   return localStorageOk || idbOk;
 }
 
-export function resetGuestPreviewState(): UserState {
+export async function resetGuestPreviewState(
+  persist: typeof saveRoleStatePermanent = saveRoleStatePermanent
+): Promise<UserState> {
   const freshGuest = applySharedContentToGuestState(
     {
       ...DEFAULT_GUEST_STATE,
       dsaProgress: DEFAULT_TRACK_PROGRESS(),
       azureProgress: DEFAULT_TRACK_PROGRESS(),
-      isAuthenticated: true
+      isAuthenticated: true,
+      guestSandboxInitialized: true,
+      guestSharedSettingsCustomized: false,
+      guestDeletedSharedPdfIds: [],
+      guestDeletedSharedResourceIds: []
     },
     loadSharedContentSync()
   );
-  saveRoleStatePermanent(freshGuest);
+  freshGuest.lastSavedTimestamp = new Date().toISOString();
+  const previousGuest = typeof localStorage !== 'undefined' ? localStorage.getItem(GUEST_STORAGE_KEY) : null;
+  if (typeof localStorage !== 'undefined') {
+    try { localStorage.removeItem(GUEST_STORAGE_KEY); } catch { /* The persistence call below reports failure. */ }
+  }
+  const persisted = await persist(freshGuest);
+  if (!persisted) {
+    if (previousGuest && typeof localStorage !== 'undefined') {
+      try { localStorage.setItem(GUEST_STORAGE_KEY, previousGuest); } catch { /* Preserve failure signal. */ }
+    }
+    throw new Error('Guest preview reset could not be saved to browser storage.');
+  }
+  const storedGuest = await loadFromIndexedDB<UserState>(GUEST_STORAGE_KEY);
+  if (storedGuest && (storedGuest.lastSavedTimestamp || '') > freshGuest.lastSavedTimestamp!) {
+    const clearedStaleCache = await deleteFromIndexedDB(GUEST_STORAGE_KEY);
+    if (!clearedStaleCache) throw new Error('A stale Guest-only browser cache could not be cleared.');
+  }
   return freshGuest;
 }
 

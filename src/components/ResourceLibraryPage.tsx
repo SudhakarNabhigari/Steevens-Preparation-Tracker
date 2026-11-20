@@ -102,9 +102,8 @@ export const ResourceLibraryPage: React.FC = () => {
     return Array.from(tagsSet).sort();
   }, [resources]);
 
-  // Open modal for Add (Owner Only)
+  // Add or edit within the active role's isolated library.
   const handleOpenAdd = () => {
-    if (!isOwner) return;
     setEditingResource(null);
     setFormTitle('');
     setFormUrl('');
@@ -120,9 +119,7 @@ export const ResourceLibraryPage: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  // Open modal for Edit (Owner Only)
   const handleOpenEdit = (res: ResourceItem) => {
-    if (!isOwner) return;
     setEditingResource(res);
     setFormTitle(res.title);
     setFormUrl(res.url);
@@ -152,7 +149,6 @@ export const ResourceLibraryPage: React.FC = () => {
 
   const handleSaveResource = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isOwner) return;
     setFormError('');
 
     if (!formTitle.trim()) {
@@ -207,7 +203,6 @@ export const ResourceLibraryPage: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
-    if (!isOwner) return;
     deleteResource(id);
     setDeleteConfirmId(null);
   };
@@ -289,8 +284,7 @@ export const ResourceLibraryPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Action Button (Owner) or Read-Only Sync Badge (Guest) */}
-        {isOwner ? (
+        <div className="flex items-center gap-2 shrink-0">
           <button
             onClick={handleOpenAdd}
             className="px-4 py-2.5 rounded-xl bg-[#E7826D] hover:bg-[#D66F5A] active:bg-[#C85D48] text-white text-xs font-bold flex items-center gap-2 cursor-pointer shadow-md shadow-[#E7826D]/30 transition-all uppercase tracking-wider shrink-0"
@@ -298,12 +292,7 @@ export const ResourceLibraryPage: React.FC = () => {
             <Plus className="w-4 h-4" />
             <span>Add Resource</span>
           </button>
-        ) : (
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="px-3 py-1.5 rounded-xl bg-white border border-[#E0DCD3] text-[#78716C] text-xs font-semibold flex items-center gap-2 shadow-sm">
-              <Lock className="w-3.5 h-3.5 text-[#E7826D]" />
-              <span>Read-Only · Shared by Steeven</span>
-            </div>
+          {!isOwner && (
             <button
               onClick={handleSyncLatest}
               className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929] text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm"
@@ -312,20 +301,20 @@ export const ResourceLibraryPage: React.FC = () => {
               <RefreshCw className={`w-3.5 h-3.5 text-[#E7826D] ${isSyncing ? 'animate-spin' : ''}`} />
               <span>Sync</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
-      {/* Guest Read-Only Notice */}
+      {/* Guest sandbox notice */}
       {!isOwner && (
         <div className="p-4 rounded-xl bg-white border border-[#E0DCD3] text-xs text-[#78716C] flex items-start gap-3 shadow-sm">
           <Lock className="w-4 h-4 text-[#E7826D] shrink-0 mt-0.5" />
           <div className="space-y-0.5">
             <span className="font-bold text-[#292929] block">
-              Viewing Steeven&apos;s Shared Resource Library (Read-Only)
+              Guest Resource Library (Temporary Sandbox)
             </span>
             <p className="leading-relaxed">
-              You can search, filter, open links, and jump to preparation days. Adding, editing, deleting, or modifying resource status and notes is restricted to Steeven (Owner).
+              Changes here are saved only in this Guest preview and never change Steeven&apos;s library.
             </p>
           </div>
         </div>
@@ -466,7 +455,7 @@ export const ResourceLibraryPage: React.FC = () => {
       <div className="flex items-center justify-between text-xs text-[#78716C] px-1">
         <span>Showing <strong className="text-[#292929]">{filteredResources.length}</strong> of {resources.length} saved resources</span>
         {!isOwner && (
-          <span className="text-[#E7826D] font-semibold">Read-Only Shared Library (Synced from Steeven)</span>
+          <span className="text-[#E7826D] font-semibold">Temporary Guest Library · isolated from Owner</span>
         )}
       </div>
 
@@ -479,20 +468,16 @@ export const ResourceLibraryPage: React.FC = () => {
           <div className="space-y-1">
             <h3 className="text-lg font-bold text-[#292929]">No Learning Resources Added Yet</h3>
             <p className="text-xs text-[#78716C] max-w-md mx-auto">
-              {isOwner
-                ? 'Bookmark official docs, research papers, YouTube videos, and architecture guides mapped to your 180-day preparation schedule.'
-                : 'Steeven has not added any shared resources yet. Any resources Steeven adds will appear here automatically.'}
+              Bookmark official docs, research papers, YouTube videos, and architecture guides mapped to your preparation schedule.
             </p>
           </div>
-          {isOwner && (
-            <button
-              onClick={handleOpenAdd}
-              className="px-5 py-2.5 rounded-xl bg-[#E7826D] hover:bg-[#D66F5A] text-white text-xs font-bold uppercase tracking-wider cursor-pointer shadow-md shadow-[#E7826D]/30 inline-flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add Your First Resource</span>
-            </button>
-          )}
+          <button
+            onClick={handleOpenAdd}
+            className="px-5 py-2.5 rounded-xl bg-[#E7826D] hover:bg-[#D66F5A] text-white text-xs font-bold uppercase tracking-wider cursor-pointer shadow-md shadow-[#E7826D]/30 inline-flex items-center gap-2"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Your First Resource</span>
+          </button>
         </div>
       ) : filteredResources.length === 0 ? (
         <div className="bg-white border border-[#E0DCD3] rounded-2xl p-8 text-center text-xs text-[#78716C]">
@@ -593,7 +578,7 @@ export const ResourceLibraryPage: React.FC = () => {
                     </div>
                   )}
 
-                  {/* Personal Notes Display & Edit Toggle (Owner Only Edit) */}
+                  {/* Personal Notes Display & Edit Toggle */}
                   {res.personalNotes && (
                     <div className="mt-3 p-3 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-xs space-y-1">
                       <div className="flex items-center justify-between text-[#78716C] font-semibold text-[11px]">
@@ -601,20 +586,18 @@ export const ResourceLibraryPage: React.FC = () => {
                           <FileText className="w-3.5 h-3.5 text-[#E7826D]" />
                           <span>Personal Notes</span>
                         </span>
-                        {isOwner && (
-                          <button
-                            onClick={() => {
-                              setActiveNotesId(activeNotesId === res.id ? null : res.id);
-                              setNotesDraft(res.personalNotes);
-                            }}
-                            className="hover:underline text-[#E7826D] cursor-pointer"
-                          >
-                            {activeNotesId === res.id ? 'Cancel' : 'Edit Note'}
-                          </button>
-                        )}
+                        <button
+                          onClick={() => {
+                            setActiveNotesId(activeNotesId === res.id ? null : res.id);
+                            setNotesDraft(res.personalNotes);
+                          }}
+                          className="hover:underline text-[#E7826D] cursor-pointer"
+                        >
+                          {activeNotesId === res.id ? 'Cancel' : 'Edit Note'}
+                        </button>
                       </div>
 
-                      {isOwner && activeNotesId === res.id ? (
+                      {activeNotesId === res.id ? (
                         <div className="space-y-2 pt-1">
                           <textarea
                             value={notesDraft}
@@ -643,9 +626,8 @@ export const ResourceLibraryPage: React.FC = () => {
                   )}
                 </div>
 
-                {/* Right Action Icons Strip (Owner Only) */}
-                {isOwner && (
-                  <div className="flex sm:flex-col items-center justify-end gap-1.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#E0DCD3]">
+                {/* Actions modify only the signed-in role's local state. */}
+                <div className="flex sm:flex-col items-center justify-end gap-1.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#E0DCD3]">
                     {/* Important Toggle */}
                     <button
                       onClick={() => toggleResourceImportant(res.id)}
@@ -689,16 +671,15 @@ export const ResourceLibraryPage: React.FC = () => {
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
-                  </div>
-                )}
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {/* Add / Edit Resource Modal (Owner Only) */}
-      {isOwner && isModalOpen && (
+      {/* Add / Edit Resource Modal */}
+      {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-[#292929]/70 flex items-center justify-center p-4 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white border border-[#E0DCD3] rounded-2xl p-6 max-w-xl w-full space-y-4 shadow-2xl my-8">
             <div className="flex items-center justify-between border-b border-[#E0DCD3] pb-3">
@@ -866,8 +847,8 @@ export const ResourceLibraryPage: React.FC = () => {
         </div>
       )}
 
-      {/* Delete Confirmation Modal (Owner Only) */}
-      {isOwner && deleteConfirmId && (
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmId && (
         <div className="fixed inset-0 z-50 bg-[#292929]/70 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white border border-[#E0DCD3] rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <div className="flex items-start gap-3">

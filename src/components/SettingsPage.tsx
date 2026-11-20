@@ -42,7 +42,7 @@ export const SettingsPage: React.FC = () => {
   const [isUpdatingCredentials, setIsUpdatingCredentials] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
-  // Shared Application Settings form state (Owner editable, Guest read-only)
+  // Guest edits these preferences in its isolated local sandbox.
   const [prepTitle, setPrepTitle] = useState(state.sharedSettings?.preparationTitle || "STEEVEN'S 180-DAY PREPARATION TRACKER");
   const [scheduleNote, setScheduleNote] = useState(state.sharedSettings?.studyScheduleBannerNote || '');
   const [libraryNotice, setLibraryNotice] = useState(state.sharedSettings?.resourceLibraryNotice || '');
@@ -99,8 +99,6 @@ export const SettingsPage: React.FC = () => {
 
   const handleSaveSharedPreferences = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isOwner) return;
-
     const ok = updateSharedSettings({
       preparationTitle: prepTitle.trim() || "STEEVEN'S 180-DAY PREPARATION TRACKER",
       studyScheduleBannerNote: scheduleNote.trim(),
@@ -147,7 +145,7 @@ export const SettingsPage: React.FC = () => {
           <p className="text-xs sm:text-sm text-[#78716C] mt-1">
             {isOwner
               ? 'Manage security preferences, shared application configuration, simulation testing, and data storage.'
-              : "Guest Preview Mode: Viewing shared configuration read-only. Steeven's credentials and owner controls are protected."}
+              : "Guest Preview Mode: preferences are temporary and local. Owner credentials and controls remain protected."}
           </p>
         </div>
 
@@ -166,15 +164,15 @@ export const SettingsPage: React.FC = () => {
         <div className="p-4 rounded-xl bg-white border border-[#E0DCD3] text-xs text-[#78716C] shadow-sm flex items-start gap-3">
           <Lock className="w-4 h-4 text-[#E7826D] shrink-0 mt-0.5" />
           <div>
-            <span className="font-bold text-[#292929] block mb-0.5">Guest Read-Only Settings</span>
+            <span className="font-bold text-[#292929] block mb-0.5">Guest Temporary Settings</span>
             <span>
-              You are viewing Steeven&apos;s shared application settings in Read-Only mode. Private account credentials and simulation controls cannot be modified or accessed by Guests.
+              Changes are saved only to this Guest preview. Private account credentials and simulation controls remain unavailable.
             </span>
           </div>
         </div>
       )}
 
-      {/* Shared Application Configuration (Synced from Owner to Guest Read-Only) */}
+      {/* Shared defaults with role-local Guest overrides */}
       <div className="bg-white border border-[#E0DCD3] rounded-2xl p-6 shadow-sm space-y-4">
         <div className="flex items-center justify-between border-b border-[#E0DCD3] pb-3">
           <div className="flex items-center gap-2 text-sm font-bold text-[#292929] uppercase tracking-wider">
@@ -188,14 +186,14 @@ export const SettingsPage: React.FC = () => {
                 : 'bg-stone-100 text-stone-600 border border-stone-200'
             }`}
           >
-            {isOwner ? 'OWNER MANAGED · SYNCED TO GUEST' : 'READ-ONLY · SYNCED FROM OWNER'}
+            {isOwner ? 'OWNER MANAGED · SYNCED TO GUEST' : 'GUEST SANDBOX · LOCAL ONLY'}
           </span>
         </div>
 
         {sharedSavedSuccess && (
           <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
             <Check className="w-4 h-4 text-[#16A34A]" />
-            <span className="font-semibold">Shared application preferences saved and synced!</span>
+            <span className="font-semibold">{isOwner ? 'Shared application preferences saved and synced!' : 'Guest preferences saved locally.'}</span>
           </div>
         )}
 
@@ -208,8 +206,6 @@ export const SettingsPage: React.FC = () => {
               <input
                 type="text"
                 value={prepTitle}
-                disabled={!isOwner}
-                readOnly={!isOwner}
                 onChange={(e) => setPrepTitle(e.target.value)}
                 className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-[#292929] focus:outline-none focus:border-[#E7826D] disabled:opacity-80 disabled:cursor-not-allowed"
               />
@@ -224,8 +220,6 @@ export const SettingsPage: React.FC = () => {
                 min={1}
                 max={12}
                 value={dailyGoalHours}
-                disabled={!isOwner}
-                readOnly={!isOwner}
                 onChange={(e) => setDailyGoalHours(Number(e.target.value))}
                 className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-[#292929] font-mono focus:outline-none focus:border-[#E7826D] disabled:opacity-80 disabled:cursor-not-allowed"
               />
@@ -239,8 +233,6 @@ export const SettingsPage: React.FC = () => {
             <input
               type="text"
               value={scheduleNote}
-              disabled={!isOwner}
-              readOnly={!isOwner}
               onChange={(e) => setScheduleNote(e.target.value)}
               className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-[#292929] focus:outline-none focus:border-[#E7826D] disabled:opacity-80 disabled:cursor-not-allowed"
             />
@@ -253,19 +245,16 @@ export const SettingsPage: React.FC = () => {
             <input
               type="text"
               value={libraryNotice}
-              disabled={!isOwner}
-              readOnly={!isOwner}
               onChange={(e) => setLibraryNotice(e.target.value)}
               className="w-full px-3 py-2 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-[#292929] focus:outline-none focus:border-[#E7826D] disabled:opacity-80 disabled:cursor-not-allowed"
             />
           </div>
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
-            <label className={`flex items-center gap-2 ${isOwner ? 'cursor-pointer' : 'cursor-not-allowed opacity-85'}`}>
+            <label className="flex items-center gap-2 cursor-pointer">
               <input
                 type="checkbox"
                 checked={weekendGuidance}
-                disabled={!isOwner}
                 onChange={(e) => setWeekendGuidance(e.target.checked)}
                 className="rounded border-[#E0DCD3] text-[#E7826D] focus:ring-[#E7826D] w-4 h-4"
               />
@@ -274,7 +263,7 @@ export const SettingsPage: React.FC = () => {
               </span>
             </label>
 
-            {isOwner && (
+            {
               <button
                 type="submit"
                 className="px-4 py-2 bg-[#E7826D] hover:bg-[#D66F5A] text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors uppercase tracking-wider"
@@ -282,7 +271,7 @@ export const SettingsPage: React.FC = () => {
                 <Save className="w-3.5 h-3.5" />
                 <span>Save Shared Preferences</span>
               </button>
-            )}
+            }
           </div>
         </form>
       </div>

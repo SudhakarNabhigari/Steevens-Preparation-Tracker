@@ -54,6 +54,7 @@ import {
   importBackupJson,
   loadSharedContentAsync,
   applySharedContentToGuestState,
+  mergeSharedContentIntoGuestState,
   subscribeToSharedContentUpdates,
   resetGuestPreviewState,
   extractSharedContentFromOwner,
@@ -192,7 +193,7 @@ interface AppContextType {
   resumeTimer: () => void;
   resetTimer: () => void;
 
-  // PDF Management (Owner Only)
+  // PDF changes are role-local; only Owner state is mirrored to shared/cloud storage.
   uploadRoadmapPdf: (
     file: File
   ) => Promise<{ success: boolean; message: string; pdfId?: string; record?: RoadmapPdfRecord }>;
@@ -267,6 +268,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const authActionInProgressRef = useRef<boolean>(false);
   const stateRef = useRef<UserState>(state);
   stateRef.current = state;
+  const guestHydrationGenerationRef = useRef(0);
+  const guestResetInProgressRef = useRef(false);
   const getClockNow = useCallback(() => {
     if (stateRef.current.role !== 'owner') return Date.now();
     const anchor = serverTimeAnchorRef.current;
@@ -448,7 +451,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const latestShared = await loadSharedContentAsync();
     setState(prev => {
       if (prev.role !== 'guest') return prev;
-      return applySharedContentToGuestState(prev, latestShared);
+      return mergeSharedContentIntoGuestState(prev, latestShared);
     });
   }, []);
 
@@ -1040,6 +1043,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const isGuest = lowerUser === 'guest';
         const isPassValid = await verifyGuestLocalPassword(pass);
         if (isGuest && isPassValid) {
+          const hydrationGeneration = ++guestHydrationGenerationRef.current;
           const guestState = loadRoleStateSync('guest');
           guestState.isAuthenticated = true;
           guestState.passwordHash = '';
@@ -1052,6 +1056,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           Promise.all([loadFromIndexedDB(GUEST_STORAGE_KEY), loadSharedContentAsync()]).then(
             ([dbGuest, latestShared]) => {
+              if (hydrationGeneration !== guestHydrationGenerationRef.current) return;
               setState(prev => {
                 if (prev.role !== 'guest' || !prev.isAuthenticated) return prev;
                 const baseGuest =
@@ -1060,7 +1065,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
                   (!prev.lastSavedTimestamp || dbGuest.lastSavedTimestamp > prev.lastSavedTimestamp)
                     ? hydrateUserState({ ...dbGuest, passwordHash: '', isAuthenticated: true }, 'guest')
                     : prev;
-                return applySharedContentToGuestState(baseGuest, latestShared);
+                return mergeSharedContentIntoGuestState(baseGuest, latestShared);
               });
             }
           );
@@ -1076,6 +1081,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const logout = useCallback(() => {
+    guestHydrationGenerationRef.current += 1;
     explicitLogoutRef.current = true;
     ownerCloudUserIdRef.current = null;
     if (cloudSaveTimeoutRef.current) clearTimeout(cloudSaveTimeoutRef.current);
@@ -1756,10 +1762,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     async (
       file: File
     ): Promise<{ success: boolean; message: string; pdfId?: string; record?: RoadmapPdfRecord }> => {
-      if (state.role !== 'owner') {
-        return { success: false, message: 'Only Steeven (Owner) has permission to upload roadmap PDFs.' };
-      }
-
       if (file.type !== 'application/pdf') {
         return { success: false, message: 'Invalid file type. Only PDF documents (.pdf) are allowed.' };
       }
@@ -1768,15 +1770,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         const reader = new FileReader();
         reader.onload = e => {
           const dataUrl = e.target?.result as string;
-          const newId = `pdf_${Date.now()}`;
+          const isGuest = state.role === 'guest';
+          const newId = isGuest
+            ? `guest_pdf_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+            : `pdf_${Date.now()}`;
           const newRecord: RoadmapPdfRecord = {
             id: newId,
             filename: file.name,
             fileSize: file.size,
             fileSizeBytesFormatted: `${(file.size / 1024).toFixed(1)} KB`,
             uploadTimestamp: new Date().toISOString(),
-            ownerId: 'steeven_owner',
-            storagePath: `/uploaded_roadmaps/${file.name}`,
+            ownerId: isGuest ? 'guest-preview' : 'steeven_owner',
+            storagePath: isGuest ? `guest-preview/${file.name}` : `/uploaded_roadmaps/${file.name}`,
             fileUrl: dataUrl,
             version: (state.uploadedPdfs.length || 1) + 1,
             isActiveRoadmap: false,
@@ -1788,7 +1793,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           };
 
           setState(prev => {
-            if (prev.role !== 'owner') return prev;
+            if (prev.role !== state.role) return prev;
             return {
               ...prev,
               uploadedPdfs: [newRecord, ...prev.uploadedPdfs]
@@ -1815,10 +1820,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const setActivePdf = useCallback(
     (pdfId: string) => {
-      if (state.role !== 'owner') return;
+      if (state.role !== 'owner' && state.role !== 'guest') return;
 
       setState(prev => {
-        if (prev.role !== 'owner') return prev;
+        if (prev.role !== state.role) return prev;
         return {
           ...prev,
           activePdfId: pdfId,
@@ -1834,17 +1839,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deletePdf = useCallback(
     (pdfId: string): boolean => {
-      if (state.role !== 'owner') return false;
+      if (state.role !== 'owner' && state.role !== 'guest') return false;
 
       if (state.uploadedPdfs.length <= 1) return false;
 
       setState(prev => {
-        if (prev.role !== 'owner' || prev.uploadedPdfs.length <= 1) return prev;
+        if (prev.role !== state.role || prev.uploadedPdfs.length <= 1) return prev;
         const updated = prev.uploadedPdfs.filter(p => p.id !== pdfId);
         const nextActiveId = prev.activePdfId === pdfId ? updated[0].id : prev.activePdfId;
 
         return {
           ...prev,
+          guestDeletedSharedPdfIds: prev.role === 'guest' && !pdfId.startsWith('guest_pdf_')
+            ? Array.from(new Set([...(prev.guestDeletedSharedPdfIds || []), pdfId]))
+            : prev.guestDeletedSharedPdfIds,
           uploadedPdfs: updated.map(p => ({
             ...p,
             isActiveRoadmap: p.id === nextActiveId
@@ -1878,12 +1886,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [state.role]
   );
 
-  const resetGuestPreview = useCallback(() => {
-    const resetGuest = resetGuestPreviewState();
-    setState(resetGuest);
-    setSelectedDayNumberState(1);
-    setSelectedDsaDayState(1);
-    setSelectedAzureDayState(1);
+  const resetGuestPreview = useCallback(async () => {
+    if (stateRef.current.role !== 'guest' || guestResetInProgressRef.current) return;
+    if (typeof window !== 'undefined' && !window.confirm('Reset Guest Preview? This clears all temporary Guest progress, notes, settings, resources, and uploaded PDFs. Owner data is not affected.')) return;
+    guestResetInProgressRef.current = true;
+    guestHydrationGenerationRef.current += 1;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    if (cloudSaveTimeoutRef.current) clearTimeout(cloudSaveTimeoutRef.current);
+    try {
+      const resetGuest = await resetGuestPreviewState();
+      if (stateRef.current.role !== 'guest') return;
+      setState(resetGuest);
+      setSelectedDayNumberState(1);
+      setSelectedDsaDayState(1);
+      setSelectedAzureDayState(1);
+      setAiResourcesTarget(null);
+      setCurrentPage('home_dashboard');
+    } catch {
+      if (typeof window !== 'undefined') window.alert('Guest Preview could not be reset because browser storage did not confirm the save. Your current Guest data was kept. Please try again.');
+    } finally {
+      guestResetInProgressRef.current = false;
+    }
   }, []);
 
   const resetAllData = useCallback(() => {
@@ -1910,11 +1933,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateSharedSettings = useCallback(
     (updates: Partial<SharedAppSettings>): boolean => {
-      if (state.role !== 'owner') return false;
+      if (state.role !== 'owner' && state.role !== 'guest') return false;
       setState(prev => {
-        if (prev.role !== 'owner') return prev;
+        if (prev.role !== state.role) return prev;
         return {
           ...prev,
+          guestSharedSettingsCustomized: prev.role === 'guest' ? true : prev.guestSharedSettingsCustomized,
           sharedSettings: {
             ...prev.sharedSettings,
             ...updates,
@@ -1927,18 +1951,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     [state.role]
   );
 
-  // ==========================================
-  // RESOURCE LIBRARY ACTIONS (OWNER ONLY MUTATIONS)
-  // ==========================================
+  // Resource state is role-local; Guest mutations never update shared Owner content.
   const addResource = useCallback(
     (item: Omit<ResourceItem, 'id' | 'dateAdded'>): { success: boolean; message: string; id?: string } => {
-      if (state.role !== 'owner') {
-        return {
-          success: false,
-          message: 'Read-only in Guest mode: only Steeven (Owner) can modify the Resource Library.'
-        };
-      }
-
       let validUrl = item.url.trim();
       if (!validUrl) {
         return { success: false, message: 'Resource URL is required.' };
@@ -1958,7 +1973,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         return { success: false, message: 'A resource with this URL already exists in your library.' };
       }
 
-      const newId = `res_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const newId = `${state.role === 'guest' ? 'guest_res' : 'res'}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const newResource: ResourceItem = {
         ...item,
         url: validUrl,
@@ -1967,7 +1982,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       };
 
       setState(prev => {
-        if (prev.role !== 'owner') return prev;
+        if (prev.role !== state.role) return prev;
         return {
           ...prev,
           resources: [newResource, ...(prev.resources || [])]
@@ -1981,12 +1996,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateResource = useCallback(
     (id: string, updates: Partial<ResourceItem>): boolean => {
-      if (state.role !== 'owner') return false;
+      if (state.role !== 'owner' && state.role !== 'guest') return false;
       const exists = (state.resources || []).some(r => r.id === id);
       if (!exists) return false;
 
       setState(prev => {
-        if (prev.role !== 'owner') return prev;
+        if (prev.role !== state.role) return prev;
         const list = prev.resources || [];
         return {
           ...prev,
@@ -2000,15 +2015,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const deleteResource = useCallback(
     (id: string): boolean => {
-      if (state.role !== 'owner') return false;
+      if (state.role !== 'owner' && state.role !== 'guest') return false;
       const exists = (state.resources || []).some(r => r.id === id);
       if (!exists) return false;
 
       setState(prev => {
-        if (prev.role !== 'owner') return prev;
+        if (prev.role !== state.role) return prev;
         const list = prev.resources || [];
         return {
           ...prev,
+          guestDeletedSharedResourceIds: prev.role === 'guest' && !id.startsWith('guest_res_')
+            ? Array.from(new Set([...(prev.guestDeletedSharedResourceIds || []), id]))
+            : prev.guestDeletedSharedResourceIds,
           resources: list.filter(r => r.id !== id)
         };
       });
@@ -2019,9 +2037,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const toggleResourceImportant = useCallback(
     (id: string) => {
-      if (state.role !== 'owner') return;
+      if (state.role !== 'owner' && state.role !== 'guest') return;
       setState(prev => {
-        if (prev.role !== 'owner') return prev;
+        if (prev.role !== state.role) return prev;
         return {
           ...prev,
           resources: (prev.resources || []).map(r =>
@@ -2035,9 +2053,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const toggleResourceCompleted = useCallback(
     (id: string) => {
-      if (state.role !== 'owner') return;
+      if (state.role !== 'owner' && state.role !== 'guest') return;
       setState(prev => {
-        if (prev.role !== 'owner') return prev;
+        if (prev.role !== state.role) return prev;
         return {
           ...prev,
           resources: (prev.resources || []).map(r =>
@@ -2051,9 +2069,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const saveResourceNotes = useCallback(
     (id: string, notes: string) => {
-      if (state.role !== 'owner') return;
+      if (state.role !== 'owner' && state.role !== 'guest') return;
       setState(prev => {
-        if (prev.role !== 'owner') return prev;
+        if (prev.role !== state.role) return prev;
         return {
           ...prev,
           resources: (prev.resources || []).map(r =>

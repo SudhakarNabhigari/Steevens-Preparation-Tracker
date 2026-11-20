@@ -145,27 +145,19 @@ export const RoadmapPdfPage: React.FC = () => {
   };
 
   const handleFileProcess = async (file: File) => {
-    if (!isOwner) {
-      setUploadStatus({
-        message: 'Guest Preview Mode: PDF upload, replacement, and deletion are restricted to Steeven (Owner).',
-        type: 'error'
-      });
-      return;
-    }
-
     if (file.type !== 'application/pdf') {
       setUploadStatus({ message: 'Only PDF documents (.pdf) can be uploaded.', type: 'error' });
       return;
     }
 
     setIsUploading(true);
-    setUploadStatus({ message: 'Validating and uploading PDF to persistent storage...', type: 'info' });
+    setUploadStatus({ message: isOwner ? 'Validating and uploading PDF to persistent storage...' : 'Adding PDF to this Guest preview...', type: 'info' });
 
     const result = await uploadRoadmapPdf(file);
     setIsUploading(false);
 
     if (result.success && result.pdfId) {
-      setUploadStatus({ message: result.message, type: 'success' });
+      setUploadStatus({ message: isOwner ? result.message : 'PDF saved only in this Guest preview.', type: 'success' });
       setPreviewPdfId(result.pdfId);
       // Ask owner if they want to activate this as the primary roadmap
       const uploadedRecord = result.record || state.uploadedPdfs.find(p => p.id === result.pdfId);
@@ -179,7 +171,7 @@ export const RoadmapPdfPage: React.FC = () => {
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
-    if (isOwner) setIsDragging(true);
+    setIsDragging(true);
   };
 
   const handleDragLeave = () => {
@@ -189,7 +181,6 @@ export const RoadmapPdfPage: React.FC = () => {
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-    if (!isOwner) return;
 
     const file = e.dataTransfer.files?.[0];
     if (file) {
@@ -206,7 +197,6 @@ export const RoadmapPdfPage: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
-    if (!isOwner) return;
     const ok = deletePdf(id);
     if (ok) {
       setDeleteConfirmId(null);
@@ -246,8 +236,7 @@ export const RoadmapPdfPage: React.FC = () => {
           </p>
         </div>
 
-        {/* Upload Trigger Button (Owner Only) */}
-        {isOwner ? (
+        <div className="flex flex-wrap items-center gap-2">
           <div>
             <input
               type="file"
@@ -265,12 +254,7 @@ export const RoadmapPdfPage: React.FC = () => {
               <span>{isUploading ? 'Uploading PDF...' : 'Upload New Roadmap PDF'}</span>
             </button>
           </div>
-        ) : (
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="px-3 py-1.5 rounded-xl bg-white border border-[#E0DCD3] text-[#78716C] text-xs font-semibold flex items-center gap-2 shadow-sm">
-              <Eye className="w-3.5 h-3.5 text-[#E7826D]" />
-              <span>Guest Preview Mode · Read Only</span>
-            </div>
+          {!isOwner && (
             <button
               onClick={handleSyncLatest}
               className="px-3 py-1.5 rounded-xl bg-white hover:bg-[#FAF8F5] border border-[#E0DCD3] text-[#292929] text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm"
@@ -279,8 +263,8 @@ export const RoadmapPdfPage: React.FC = () => {
               <RefreshCw className={`w-3.5 h-3.5 text-[#E7826D] ${isSyncing ? 'animate-spin' : ''}`} />
               <span>Sync</span>
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Guest Notice Banner if Guest */}
@@ -288,9 +272,9 @@ export const RoadmapPdfPage: React.FC = () => {
         <div className="p-4 rounded-xl bg-white border border-[#E0DCD3] text-xs text-[#78716C] flex items-start gap-3 shadow-sm">
           <ShieldAlert className="w-5 h-5 text-[#E7826D] shrink-0 mt-0.5" />
           <div className="space-y-0.5">
-            <span className="font-bold text-[#292929] block">Guest Mode Restricted Permissions</span>
+            <span className="font-bold text-[#292929] block">Guest Temporary PDF Sandbox</span>
             <p className="leading-relaxed">
-              As a Guest, you can view, preview, and download all roadmap PDFs synced from Steeven. PDF upload, replacement, active roadmap changes, and deletion are strictly restricted to Steeven (Owner).
+              PDFs uploaded, activated, or removed here affect only this Guest preview. Owner documents and storage remain unchanged.
             </p>
           </div>
         </div>
@@ -320,8 +304,8 @@ export const RoadmapPdfPage: React.FC = () => {
         </div>
       )}
 
-      {/* Drag & Drop Upload Zone (Owner Only) */}
-      {isOwner && (
+      {/* Each role uploads into its own isolated state. */}
+      {
         <div
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -340,10 +324,10 @@ export const RoadmapPdfPage: React.FC = () => {
             Drag and drop your Roadmap PDF here, or click to browse
           </h3>
           <p className="text-xs text-[#78716C] max-w-md mx-auto">
-            Supports PDF files up to 50MB. Uploads are stored persistently and verified before active scheduling.
+            Supports PDF files up to 50MB. Guest uploads remain local to this temporary preview.
           </p>
         </div>
-      )}
+      }
 
       {/* Stored PDFs Repository Grid */}
       <div className="bg-white border border-[#E0DCD3] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4">
@@ -450,7 +434,7 @@ export const RoadmapPdfPage: React.FC = () => {
                   </button>
 
                   {/* Owner Replace & Delete */}
-                  {isOwner && !isCurrentlyActive && (
+                  {!isCurrentlyActive && (
                     <button
                       onClick={() => setReplaceConfirmRecord(pdf)}
                       className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-[#FAF8F5] text-[#E7826D] border border-[#E7826D]/30 text-xs font-bold cursor-pointer"
@@ -459,7 +443,7 @@ export const RoadmapPdfPage: React.FC = () => {
                     </button>
                   )}
 
-                  {isOwner && state.uploadedPdfs.length > 1 && (
+                  {state.uploadedPdfs.length > 1 && (
                     <button
                       onClick={() => setDeleteConfirmId(pdf.id)}
                       className="p-1.5 rounded-lg bg-white hover:bg-rose-50 text-[#78716C] hover:text-[#DC2626] border border-[#E0DCD3] text-xs cursor-pointer"
@@ -522,8 +506,8 @@ export const RoadmapPdfPage: React.FC = () => {
         </div>
       )}
 
-      {/* Confirmation Modal: Replace Active Roadmap (Owner Only) */}
-      {isOwner && replaceConfirmRecord && (
+      {/* Confirmation Modal: Replace Active Roadmap */}
+      {replaceConfirmRecord && (
         <div className="fixed inset-0 z-50 bg-[#292929]/70 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white border border-[#E0DCD3] rounded-2xl p-6 max-w-lg w-full space-y-4 shadow-2xl">
             <div className="flex items-start gap-3">
@@ -576,8 +560,8 @@ export const RoadmapPdfPage: React.FC = () => {
         </div>
       )}
 
-      {/* Confirmation Modal: Delete PDF (Owner Only) */}
-      {isOwner && deleteConfirmId && (
+      {/* Confirmation Modal: Delete PDF */}
+      {deleteConfirmId && (
         <div className="fixed inset-0 z-50 bg-[#292929]/70 flex items-center justify-center p-4 backdrop-blur-sm">
           <div className="bg-white border border-[#E0DCD3] rounded-2xl p-6 max-w-md w-full space-y-4 shadow-2xl">
             <div className="flex items-start gap-3">

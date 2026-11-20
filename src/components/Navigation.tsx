@@ -82,7 +82,7 @@ export const Navigation: React.FC = () => {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-[#E7826D] animate-pulse" />
             <span className="font-semibold text-[#F3EFE6]">
-              GUEST PREVIEW / TEMPORARY STUDY MODE — Shared PDFs, resources & settings are read-only; your study progress stays local and never affects Steeven.
+              GUEST PREVIEW / TEMPORARY STUDY MODE — Your changes stay in this isolated preview and never affect Steeven.
             </span>
           </div>
           <button

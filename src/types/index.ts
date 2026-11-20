@@ -312,6 +312,10 @@ export interface UserState {
   doubtEntries: DoubtEntry[];
   sharedSettings: SharedAppSettings;
   dailyAiResourceCompletions?: Record<string, boolean>;
+  guestSandboxInitialized?: boolean;
+  guestSharedSettingsCustomized?: boolean;
+  guestDeletedSharedPdfIds?: string[];
+  guestDeletedSharedResourceIds?: string[];
 }
 
 export type SaveStatus = 'saved' | 'saving' | 'error';
