@@ -176,7 +176,7 @@ export const PreparationCalendarPage: React.FC = () => {
             onClick={handleJumpToEnd}
             className="px-3 py-1.5 rounded-xl bg-white border border-[#E0DCD3] hover:bg-[#FAF8F5] text-xs font-semibold text-[#292929] transition-colors cursor-pointer shadow-sm"
           >
-            {selectedTrack === 'main' ? 'Final Day (May 2027)' : 'Day 100 (Feb 2027)'}
+            {selectedTrack === 'main' ? 'Final Day (May 2027)' : 'Day 100 (Mar 2027)'}
           </button>
         </div>
       </div>

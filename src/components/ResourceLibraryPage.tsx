@@ -266,6 +266,236 @@ export const ResourceLibraryPage: React.FC = () => {
     filterCompletedOnly
   ]);
 
+  const groupedResources = useMemo(() => {
+    if (groupBy === 'list') return [] as Array<{ key: string; label: string; items: ResourceItem[] }>;
+
+    const groups = new Map<string, { label: string; sortKey: number | string; items: ResourceItem[] }>();
+    for (const item of filteredResources) {
+      if (groupBy === 'week') {
+        const wk = item.relatedWeek || 1;
+        const key = `week_${wk}`;
+        const existing = groups.get(key) || { label: `Week ${wk}`, sortKey: wk, items: [] };
+        existing.items.push(item);
+        groups.set(key, existing);
+      } else if (groupBy === 'day') {
+        const dy = item.relatedDay || 1;
+        const topic = ALL_180_DAYS[dy - 1]?.topic;
+        const key = `day_${dy}`;
+        const existing = groups.get(key) || {
+          label: topic ? `Day ${dy} · ${topic}` : `Day ${dy}`,
+          sortKey: dy,
+          items: []
+        };
+        existing.items.push(item);
+        groups.set(key, existing);
+      } else {
+        const cat = item.category || 'Other Resources';
+        const orderIndex = CATEGORIES.indexOf(cat);
+        const existing = groups.get(cat) || {
+          label: cat,
+          sortKey: orderIndex >= 0 ? orderIndex : CATEGORIES.length + 1,
+          items: []
+        };
+        existing.items.push(item);
+        groups.set(cat, existing);
+      }
+    }
+
+    return Array.from(groups.entries())
+      .sort((a, b) => Number(a[1].sortKey) - Number(b[1].sortKey))
+      .map(([key, group]) => ({ key, label: group.label, items: group.items }));
+  }, [filteredResources, groupBy]);
+
+  const renderResourceCard = (res: ResourceItem) => (
+    <div
+      key={res.id}
+      className={`bg-white border rounded-2xl p-5 shadow-sm transition-all hover:shadow-md ${
+        res.isImportant ? 'border-[#E7826D]/50' : 'border-[#E0DCD3]'
+      }`}
+    >
+      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+        <div className="space-y-1.5 flex-1">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <span className="px-2.5 py-0.5 rounded-md bg-[#FAF8F5] text-[#292929] font-semibold border border-[#E0DCD3]">
+              {res.category}
+            </span>
+            <button
+              onClick={() => {
+                setSelectedDayNumber(res.relatedDay);
+                setCurrentPage('today_work');
+              }}
+              className="px-2.5 py-0.5 rounded-md bg-[#FAF8F5] hover:bg-[#E0DCD3] text-[#E7826D] font-mono font-bold border border-[#E0DCD3] cursor-pointer"
+              title="Jump to this Day's preparation"
+            >
+              Day {res.relatedDay} (Week {res.relatedWeek})
+            </button>
+            {res.isImportant && (
+              <span className="px-2 py-0.5 rounded-md bg-[#E7826D]/15 text-[#E7826D] font-bold text-[10px] flex items-center gap-1">
+                <Star className="w-3 h-3 fill-[#E7826D]" />
+                <span>IMPORTANT</span>
+              </span>
+            )}
+            {res.isCompleted && (
+              <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[10px] flex items-center gap-1 border border-emerald-200">
+                <CheckCircle2 className="w-3 h-3 text-[#16A34A]" />
+                <span>REVIEWED</span>
+              </span>
+            )}
+          </div>
+
+          {/* Title & External Link */}
+          <div className="flex items-start gap-2 pt-1">
+            <h3 className="text-base font-bold text-[#292929] leading-snug">
+              {res.title}
+            </h3>
+            <a
+              href={res.url}
+              target="_blank"
+              rel="noreferrer"
+              className="p-1 rounded-lg text-[#78716C] hover:text-[#E7826D] hover:bg-[#FAF8F5] transition-colors shrink-0"
+              title="Open external link in new tab"
+            >
+              <ExternalLink className="w-4 h-4" />
+            </a>
+          </div>
+
+          {/* URL */}
+          <a
+            href={res.url}
+            target="_blank"
+            rel="noreferrer"
+            className="text-xs text-[#78716C] hover:text-[#292929] hover:underline font-mono line-clamp-1 block"
+          >
+            {res.url}
+          </a>
+
+          {/* Related Topic */}
+          {res.relatedTopic && (
+            <div className="text-xs text-[#78716C] pt-1">
+              <span className="font-semibold text-[#292929]">Syllabus Topic: </span>
+              <span>{res.relatedTopic}</span>
+            </div>
+          )}
+
+          {/* Description */}
+          {res.shortDescription && (
+            <p className="text-xs text-[#78716C] pt-1 leading-relaxed">
+              {res.shortDescription}
+            </p>
+          )}
+
+          {/* Tags */}
+          {res.tags && res.tags.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 pt-2">
+              {res.tags.map((t, idx) => (
+                <span
+                  key={idx}
+                  className="px-2 py-0.5 rounded-md bg-[#FAF8F5] border border-[#E0DCD3] text-[11px] font-mono text-[#78716C]"
+                >
+                  #{t}
+                </span>
+              ))}
+            </div>
+          )}
+
+          {/* Personal Notes Display & Edit Toggle */}
+          {res.personalNotes && (
+            <div className="mt-3 p-3 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-xs space-y-1">
+              <div className="flex items-center justify-between text-[#78716C] font-semibold text-[11px]">
+                <span className="flex items-center gap-1 text-[#292929]">
+                  <FileText className="w-3.5 h-3.5 text-[#E7826D]" />
+                  <span>Personal Notes</span>
+                </span>
+                <button
+                  onClick={() => {
+                    setActiveNotesId(activeNotesId === res.id ? null : res.id);
+                    setNotesDraft(res.personalNotes);
+                  }}
+                  className="hover:underline text-[#E7826D] cursor-pointer"
+                >
+                  {activeNotesId === res.id ? 'Cancel' : 'Edit Note'}
+                </button>
+              </div>
+
+              {activeNotesId === res.id ? (
+                <div className="space-y-2 pt-1">
+                  <textarea
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value)}
+                    rows={3}
+                    className="w-full p-2 bg-white border border-[#E0DCD3] rounded-lg text-xs text-[#292929] focus:outline-none focus:border-[#E7826D]"
+                  />
+                  <div className="flex justify-end gap-2">
+                    <button
+                      onClick={() => {
+                        saveResourceNotes(res.id, notesDraft.trim());
+                        setActiveNotesId(null);
+                      }}
+                      className="px-3 py-1 bg-[#292929] hover:bg-[#404040] text-white rounded-lg text-xs font-semibold cursor-pointer"
+                    >
+                      Save Note
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-[#292929] whitespace-pre-line leading-relaxed">
+                  {res.personalNotes}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Actions modify only the signed-in role's local state. */}
+        <div className="flex sm:flex-col items-center justify-end gap-1.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#E0DCD3]">
+          {/* Important Toggle */}
+          <button
+            onClick={() => toggleResourceImportant(res.id)}
+            className={`p-2 rounded-lg border transition-colors cursor-pointer ${
+              res.isImportant
+                ? 'bg-[#E7826D]/15 border-[#E7826D] text-[#E7826D]'
+                : 'bg-white border-[#E0DCD3] text-[#A8A29E] hover:text-[#292929]'
+            }`}
+            title={res.isImportant ? 'Unmark important' : 'Mark as important'}
+          >
+            <Star className={`w-4 h-4 ${res.isImportant ? 'fill-[#E7826D]' : ''}`} />
+          </button>
+
+          {/* Completed / Reviewed Toggle */}
+          <button
+            onClick={() => toggleResourceCompleted(res.id)}
+            className={`p-2 rounded-lg border transition-colors cursor-pointer ${
+              res.isCompleted
+                ? 'bg-emerald-50 border-emerald-300 text-[#16A34A]'
+                : 'bg-white border-[#E0DCD3] text-[#A8A29E] hover:text-[#16A34A]'
+            }`}
+            title={res.isCompleted ? 'Mark as not reviewed' : 'Mark as completed/reviewed'}
+          >
+            <CheckCircle2 className="w-4 h-4" />
+          </button>
+
+          {/* Edit */}
+          <button
+            onClick={() => handleOpenEdit(res)}
+            className="p-2 rounded-lg bg-white border border-[#E0DCD3] text-[#78716C] hover:text-[#292929] hover:bg-[#FAF8F5] transition-colors cursor-pointer"
+            title="Edit resource"
+          >
+            <Edit2 className="w-4 h-4" />
+          </button>
+
+          {/* Delete */}
+          <button
+            onClick={() => setDeleteConfirmId(res.id)}
+            className="p-2 rounded-lg bg-white border border-[#E0DCD3] text-[#78716C] hover:text-[#DC2626] hover:bg-rose-50 transition-colors cursor-pointer"
+            title="Delete resource"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
       {/* Header */}
@@ -483,197 +713,27 @@ export const ResourceLibraryPage: React.FC = () => {
         <div className="bg-white border border-[#E0DCD3] rounded-2xl p-8 text-center text-xs text-[#78716C]">
           No resources match the selected search or filter criteria.
         </div>
-      ) : (
-        /* Render according to grouping */
+      ) : groupBy === 'list' ? (
         <div className="space-y-4">
-          {filteredResources.map(res => (
-            <div
-              key={res.id}
-              className={`bg-white border rounded-2xl p-5 shadow-sm transition-all hover:shadow-md ${
-                res.isImportant ? 'border-[#E7826D]/50' : 'border-[#E0DCD3]'
-              }`}
-            >
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                <div className="space-y-1.5 flex-1">
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    <span className="px-2.5 py-0.5 rounded-md bg-[#FAF8F5] text-[#292929] font-semibold border border-[#E0DCD3]">
-                      {res.category}
-                    </span>
-                    <button
-                      onClick={() => {
-                        setSelectedDayNumber(res.relatedDay);
-                        setCurrentPage('today_work');
-                      }}
-                      className="px-2.5 py-0.5 rounded-md bg-[#FAF8F5] hover:bg-[#E0DCD3] text-[#E7826D] font-mono font-bold border border-[#E0DCD3] cursor-pointer"
-                      title="Jump to this Day's preparation"
-                    >
-                      Day {res.relatedDay} (Week {res.relatedWeek})
-                    </button>
-                    {res.isImportant && (
-                      <span className="px-2 py-0.5 rounded-md bg-[#E7826D]/15 text-[#E7826D] font-bold text-[10px] flex items-center gap-1">
-                        <Star className="w-3 h-3 fill-[#E7826D]" />
-                        <span>IMPORTANT</span>
-                      </span>
-                    )}
-                    {res.isCompleted && (
-                      <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[10px] flex items-center gap-1 border border-emerald-200">
-                        <CheckCircle2 className="w-3 h-3 text-[#16A34A]" />
-                        <span>REVIEWED</span>
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Title & External Link */}
-                  <div className="flex items-start gap-2 pt-1">
-                    <h3 className="text-base font-bold text-[#292929] leading-snug">
-                      {res.title}
-                    </h3>
-                    <a
-                      href={res.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="p-1 rounded-lg text-[#78716C] hover:text-[#E7826D] hover:bg-[#FAF8F5] transition-colors shrink-0"
-                      title="Open external link in new tab"
-                    >
-                      <ExternalLink className="w-4 h-4" />
-                    </a>
-                  </div>
-
-                  {/* URL */}
-                  <a
-                    href={res.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-[#78716C] hover:text-[#292929] hover:underline font-mono line-clamp-1 block"
-                  >
-                    {res.url}
-                  </a>
-
-                  {/* Related Topic */}
-                  {res.relatedTopic && (
-                    <div className="text-xs text-[#78716C] pt-1">
-                      <span className="font-semibold text-[#292929]">Syllabus Topic: </span>
-                      <span>{res.relatedTopic}</span>
-                    </div>
-                  )}
-
-                  {/* Description */}
-                  {res.shortDescription && (
-                    <p className="text-xs text-[#78716C] pt-1 leading-relaxed">
-                      {res.shortDescription}
-                    </p>
-                  )}
-
-                  {/* Tags */}
-                  {res.tags && res.tags.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1.5 pt-2">
-                      {res.tags.map((t, idx) => (
-                        <span
-                          key={idx}
-                          className="px-2 py-0.5 rounded-md bg-[#FAF8F5] border border-[#E0DCD3] text-[11px] font-mono text-[#78716C]"
-                        >
-                          #{t}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Personal Notes Display & Edit Toggle */}
-                  {res.personalNotes && (
-                    <div className="mt-3 p-3 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3] text-xs space-y-1">
-                      <div className="flex items-center justify-between text-[#78716C] font-semibold text-[11px]">
-                        <span className="flex items-center gap-1 text-[#292929]">
-                          <FileText className="w-3.5 h-3.5 text-[#E7826D]" />
-                          <span>Personal Notes</span>
-                        </span>
-                        <button
-                          onClick={() => {
-                            setActiveNotesId(activeNotesId === res.id ? null : res.id);
-                            setNotesDraft(res.personalNotes);
-                          }}
-                          className="hover:underline text-[#E7826D] cursor-pointer"
-                        >
-                          {activeNotesId === res.id ? 'Cancel' : 'Edit Note'}
-                        </button>
-                      </div>
-
-                      {activeNotesId === res.id ? (
-                        <div className="space-y-2 pt-1">
-                          <textarea
-                            value={notesDraft}
-                            onChange={(e) => setNotesDraft(e.target.value)}
-                            rows={3}
-                            className="w-full p-2 bg-white border border-[#E0DCD3] rounded-lg text-xs text-[#292929] focus:outline-none focus:border-[#E7826D]"
-                          />
-                          <div className="flex justify-end gap-2">
-                            <button
-                              onClick={() => {
-                                saveResourceNotes(res.id, notesDraft.trim());
-                                setActiveNotesId(null);
-                              }}
-                              className="px-3 py-1 bg-[#292929] hover:bg-[#404040] text-white rounded-lg text-xs font-semibold cursor-pointer"
-                            >
-                              Save Note
-                            </button>
-                          </div>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-[#292929] whitespace-pre-line leading-relaxed">
-                          {res.personalNotes}
-                        </p>
-                      )}
-                    </div>
-                  )}
+          {filteredResources.map(renderResourceCard)}
+        </div>
+      ) : (
+        <div className="space-y-6">
+          {groupedResources.map(group => (
+            <section key={group.key} className="space-y-3">
+              <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-white border border-[#E0DCD3] shadow-sm">
+                <div className="flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-[#E7826D]" />
+                  <h2 className="text-sm font-bold text-[#292929]">{group.label}</h2>
                 </div>
-
-                {/* Actions modify only the signed-in role's local state. */}
-                <div className="flex sm:flex-col items-center justify-end gap-1.5 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#E0DCD3]">
-                    {/* Important Toggle */}
-                    <button
-                      onClick={() => toggleResourceImportant(res.id)}
-                      className={`p-2 rounded-lg border transition-colors cursor-pointer ${
-                        res.isImportant
-                          ? 'bg-[#E7826D]/15 border-[#E7826D] text-[#E7826D]'
-                          : 'bg-white border-[#E0DCD3] text-[#A8A29E] hover:text-[#292929]'
-                      }`}
-                      title={res.isImportant ? 'Unmark important' : 'Mark as important'}
-                    >
-                      <Star className={`w-4 h-4 ${res.isImportant ? 'fill-[#E7826D]' : ''}`} />
-                    </button>
-
-                    {/* Completed / Reviewed Toggle */}
-                    <button
-                      onClick={() => toggleResourceCompleted(res.id)}
-                      className={`p-2 rounded-lg border transition-colors cursor-pointer ${
-                        res.isCompleted
-                          ? 'bg-emerald-50 border-emerald-300 text-[#16A34A]'
-                          : 'bg-white border-[#E0DCD3] text-[#A8A29E] hover:text-[#16A34A]'
-                      }`}
-                      title={res.isCompleted ? 'Mark as not reviewed' : 'Mark as completed/reviewed'}
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                    </button>
-
-                    {/* Edit */}
-                    <button
-                      onClick={() => handleOpenEdit(res)}
-                      className="p-2 rounded-lg bg-white border border-[#E0DCD3] text-[#78716C] hover:text-[#292929] hover:bg-[#FAF8F5] transition-colors cursor-pointer"
-                      title="Edit resource"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-
-                    {/* Delete */}
-                    <button
-                      onClick={() => setDeleteConfirmId(res.id)}
-                      className="p-2 rounded-lg bg-white border border-[#E0DCD3] text-[#78716C] hover:text-[#DC2626] hover:bg-rose-50 transition-colors cursor-pointer"
-                      title="Delete resource"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                </div>
+                <span className="px-2.5 py-0.5 rounded-md bg-[#FAF8F5] border border-[#E0DCD3] text-[11px] font-mono font-bold text-[#78716C]">
+                  {group.items.length} {group.items.length === 1 ? 'resource' : 'resources'}
+                </span>
               </div>
-            </div>
+              <div className="space-y-4">
+                {group.items.map(renderResourceCard)}
+              </div>
+            </section>
           ))}
         </div>
       )}

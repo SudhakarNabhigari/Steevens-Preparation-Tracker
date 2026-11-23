@@ -158,7 +158,7 @@ Deno.serve(async (req) => {
       return jsonResponse({
         ok: true,
         alreadyRanToday: false,
-        message: 'Preparation schedule starts on 16 Nov 2026 00:00 IST.',
+        message: 'Preparation schedule starts on 23 Nov 2026 00:00 IST.',
         dashboard
       });
     }

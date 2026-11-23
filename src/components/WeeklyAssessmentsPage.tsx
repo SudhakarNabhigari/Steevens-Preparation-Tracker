@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   getAllAssessmentMetadata,
@@ -367,7 +367,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
             26-WEEK WEEKLY ASSESSMENTS
           </h1>
           <p className="text-xs sm:text-sm text-[#78716C] mt-1">
-            23 Nov 2026 â€“ 21 May 2027 Â· Strict 00:00 IST date lock Â· 100 Pts/Week + 130 Verified LeetCode Problems.
+            23 Nov 2026 – 21 May 2027 · Strict 00:00 IST date lock · 100 Pts/Week + 130 Verified LeetCode Problems.
           </p>
         </div>
 
@@ -392,7 +392,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                 : 'Unlocked';
               return (
                 <option key={meta.weekNumber} value={meta.weekNumber}>
-                  Week {meta.weekNumber} â€” {statusTag}
+                  Week {meta.weekNumber} — {statusTag}
                 </option>
               );
             })}
@@ -485,7 +485,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                   setSelectedWeek(wk);
                   if (activeTab === 'review') setActiveTab('assessment');
                 }}
-                title={`Week ${wk} (${meta.scheduledDate}) â€” ${
+                title={`Week ${wk} (${meta.scheduledDate}) — ${
                   wkUnlocked ? (sub ? `${sub.percentage}%` : 'Unlocked') : `Locked until ${meta.scheduledDate} 00:00 IST`
                 }`}
                 className={`p-1.5 rounded-lg border text-center transition-all cursor-pointer flex flex-col items-center justify-center ${styleClass} ${
@@ -562,11 +562,11 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                   <Lock className="w-3 h-3 text-[#E7826D]" />
                   <span>WEEK {currentMeta.weekNumber} LOCKED</span>
                 </span>
-                <span className="text-[#A8A29E]">Â·</span>
+                <span className="text-[#A8A29E]">·</span>
                 <span className="text-[#78716C] font-mono font-semibold">
                   Unlocks: {lockStatus.unlockLabelIst}
                 </span>
-                <span className="text-[#A8A29E]">Â·</span>
+                <span className="text-[#A8A29E]">·</span>
                 <span className="text-[#78716C]">Study Window: {currentMeta.studyWindow}</span>
               </div>
               <h2 className="text-xl font-bold text-[#292929] pt-1">{currentMeta.title}</h2>
@@ -653,7 +653,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
             <div className="p-3.5 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl">
               <span className="text-[11px] text-[#78716C] font-semibold block mb-1">Assessment Blueprint</span>
               <span className="text-xs font-semibold text-[#292929]">
-                {currentMeta.questionBreakdown.mcqCount} MCQs Â· {currentMeta.questionBreakdown.codingCount} Coding/Debug Â· {currentMeta.questionBreakdown.writtenCount} Written Â· {currentMeta.questionBreakdown.leetcodeCount} LeetCode
+                {currentMeta.questionBreakdown.mcqCount} MCQs · {currentMeta.questionBreakdown.codingCount} Coding/Debug · {currentMeta.questionBreakdown.writtenCount} Written · {currentMeta.questionBreakdown.leetcodeCount} LeetCode
               </span>
             </div>
           </div>
@@ -662,7 +662,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
           <div className="space-y-4">
             <div>
               <span className="text-xs font-bold uppercase tracking-wider text-[#78716C] block mb-2">
-                Week {currentMeta.weekNumber} Syllabus Scope (Main Plan Â· DSA Â· Azure)
+                Week {currentMeta.weekNumber} Syllabus Scope (Main Plan · DSA · Azure)
               </span>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {currentMeta.topicsCovered.map((topic, i) => (
@@ -687,7 +687,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                     </span>
                     <ul className="space-y-1 text-xs text-[#78716C]">
                       {currentMeta.dsaTopics.map((t, idx) => (
-                        <li key={idx}>â€¢ {t}</li>
+                        <li key={idx}>• {t}</li>
                       ))}
                     </ul>
                   </div>
@@ -701,7 +701,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                     </span>
                     <ul className="space-y-1 text-xs text-[#78716C]">
                       {currentMeta.azureTopics.map((t, idx) => (
-                        <li key={idx}>â€¢ {t}</li>
+                        <li key={idx}>• {t}</li>
                       ))}
                     </ul>
                   </div>
@@ -841,11 +841,11 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                     <span className="px-2.5 py-0.5 rounded-md bg-[#FAF8F5] text-[#E7826D] font-bold border border-[#E0DCD3]">
                       Week {unlockedAssessment.weekNumber} Assessment
                     </span>
-                    <span className="text-[#A8A29E]">Â·</span>
+                    <span className="text-[#A8A29E]">·</span>
                     <span className="text-[#78716C] font-mono">
                       Unlocked: {lockStatus.unlockLabelIst}
                     </span>
-                    <span className="text-[#A8A29E]">Â·</span>
+                    <span className="text-[#A8A29E]">·</span>
                     <span className="text-[#78716C]">{unlockedAssessment.studyWindow}</span>
                   </div>
                   <h2 className="text-xl font-bold text-[#292929] pt-1">
@@ -879,7 +879,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                     </span>
                   ) : (
                     <span className="px-3 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      UNLOCKED Â· READY TO START
+                      UNLOCKED · READY TO START
                     </span>
                   )}
                 </div>
@@ -899,7 +899,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                   <span className="text-[11px] text-[#78716C] font-semibold block mb-1">
                     Section A (Auto-Graded)
                   </span>
-                  <span className="text-sm font-bold text-[#292929]">15 MCQs Â· 60 Pts</span>
+                  <span className="text-sm font-bold text-[#292929]">15 MCQs · 60 Pts</span>
                 </div>
 
                 <div className="p-3.5 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl">
@@ -907,7 +907,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                     Sections B & C (Rubric)
                   </span>
                   <span className="text-sm font-bold text-[#292929]">
-                    2 Coding + 3 Written Â· 40 Pts
+                    2 Coding + 3 Written · 40 Pts
                   </span>
                 </div>
 
@@ -987,7 +987,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                 <div className="flex items-center gap-2">
                   <span className="w-2.5 h-2.5 rounded-full bg-[#E7826D] animate-pulse" />
                   <span className="text-xs font-bold uppercase tracking-wider text-[#E0DCD3]">
-                    Week {unlockedAssessment.weekNumber} Assessment Â·{' '}
+                    Week {unlockedAssessment.weekNumber} Assessment ·{' '}
                     {Object.keys(userAnswers).length} / {unlockedAssessment.questions.length} Answered
                   </span>
                 </div>
@@ -1021,7 +1021,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between border-b border-[#E0DCD3] pb-2">
                   <h3 className="text-sm font-bold uppercase tracking-wider text-[#292929]">
-                    Section A â€” Objective MCQs ({mcqQuestions.length} Questions Â· 60 Pts Â· Auto-Graded)
+                    Section A — Objective MCQs ({mcqQuestions.length} Questions · 60 Pts · Auto-Graded)
                   </h3>
                 </div>
 
@@ -1045,7 +1045,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                           </span>
                         )}
                         <span className="text-xs font-bold text-[#78716C] uppercase tracking-wider">
-                          MCQ Â· Auto-Graded
+                          MCQ · Auto-Graded
                         </span>
                       </div>
                       <span className="font-mono text-xs font-bold text-[#292929]">
@@ -1098,7 +1098,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between border-b border-[#E0DCD3] pb-2">
                   <h3 className="text-sm font-bold uppercase tracking-wider text-[#292929]">
-                    Section B â€” Practical Coding & Debugging ({codingQuestions.length} Challenges Â· 20 Pts Â· Self-Reported Rubric Review)
+                    Section B — Practical Coding & Debugging ({codingQuestions.length} Challenges · 20 Pts · Self-Reported Rubric Review)
                   </h3>
                 </div>
 
@@ -1122,7 +1122,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                           </span>
                         )}
                         <span className="text-xs font-bold text-[#78716C] uppercase tracking-wider">
-                          {q.type} Â· Self-Reported Rubric Review
+                          {q.type} · Self-Reported Rubric Review
                         </span>
                       </div>
                       <span className="font-mono text-xs font-bold text-[#292929]">
@@ -1155,7 +1155,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
               <div className="space-y-4">
                 <div className="flex items-center justify-between border-b border-[#E0DCD3] pb-2">
                   <h3 className="text-sm font-bold uppercase tracking-wider text-[#292929]">
-                    Section C â€” Short-Answer & Architecture Design ({writtenQuestions.length} Questions Â· 20 Pts Â· Rubric Review)
+                    Section C — Short-Answer & Architecture Design ({writtenQuestions.length} Questions · 20 Pts · Rubric Review)
                   </h3>
                 </div>
 
@@ -1179,7 +1179,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                           </span>
                         )}
                         <span className="text-xs font-bold text-[#78716C] uppercase tracking-wider">
-                          {q.type.replace('_', ' ')} Â· Rubric Review
+                          {q.type.replace('_', ' ')} · Rubric Review
                         </span>
                       </div>
                       <span className="font-mono text-xs font-bold text-[#292929]">
@@ -1352,7 +1352,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                         Week {selectedWeek} Authentic Score & Rubric Review
                       </h2>
                       <p className="text-xs text-[#78716C]">
-                        Submitted {new Date(existingSubmission.submittedAt).toLocaleString()} Â·
+                        Submitted {new Date(existingSubmission.submittedAt).toLocaleString()} ·
                         Snapshot preserved
                       </p>
                     </div>
@@ -1374,7 +1374,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                           : 'bg-rose-50 text-rose-700 border border-rose-200'
                       }`}
                     >
-                      {existingSubmission.percentage}% Â·{' '}
+                      {existingSubmission.percentage}% ·{' '}
                       {existingSubmission.passed ? 'PASSED' : 'NEEDS REVISION'}
                     </span>
                   </div>
@@ -1384,7 +1384,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
                   <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3]">
                     <span className="text-[#78716C] font-semibold block mb-1">
-                      Section A Â· Auto-Graded MCQs
+                      Section A · Auto-Graded MCQs
                     </span>
                     <span className="text-lg font-bold font-mono text-[#292929]">
                       {existingSubmission.mcqScore ?? 0} / {existingSubmission.mcqMaxScore ?? 60} Pts
@@ -1396,7 +1396,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
 
                   <div className="p-3.5 rounded-xl bg-[#FAF8F5] border border-[#E0DCD3]">
                     <span className="text-[#78716C] font-semibold block mb-1">
-                      Sections B & C Â· Rubric Self-Review
+                      Sections B & C · Rubric Self-Review
                     </span>
                     <span className="text-lg font-bold font-mono text-[#E7826D]">
                       {existingSubmission.writtenReviewScore ?? 0} /{' '}
@@ -1439,7 +1439,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
               {/* Question-by-Question Review */}
               <div className="bg-white border border-[#E0DCD3] rounded-2xl p-6 shadow-sm space-y-4">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-[#78716C]">
-                  Detailed Question Breakdown (Historical Snapshot Â· {inspectionQuestions.length} Questions)
+                  Detailed Question Breakdown (Historical Snapshot · {inspectionQuestions.length} Questions)
                 </h3>
 
                 {inspectionQuestions.map((q, idx) => {

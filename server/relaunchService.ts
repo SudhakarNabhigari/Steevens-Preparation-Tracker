@@ -3,6 +3,7 @@ import {
   OWNER_RESTART_EMAIL_EARLIEST_MS
 } from '../src/utils/relaunchConfig.ts';
 import { getResolvedServerPipelineConfig } from './dailyResourcesService.ts';
+import { buildSupabaseRestHeaders } from './supabaseConfig.ts';
 import { getSharedCurriculumDayContext } from '../supabase/functions/daily-learning-resources/catalogData.ts';
 
 export type RelaunchEmailType = 'restart' | 'launch';
@@ -53,12 +54,10 @@ async function updateOutbox(
 ): Promise<void> {
   const response = await fetch(`${baseUrl.replace(/\/$/, '')}/rest/v1/owner_relaunch_emails?email_type=eq.${type}`, {
     method: 'PATCH',
-    headers: {
-      apikey: serviceKey,
-      Authorization: `Bearer ${serviceKey}`,
+    headers: buildSupabaseRestHeaders(serviceKey, {
       'Content-Type': 'application/json',
       Prefer: 'return=minimal'
-    },
+    }),
     body: JSON.stringify({ ...values, updated_at: new Date().toISOString() })
   });
   if (!response.ok) throw new Error('Could not update relaunch email delivery status.');
@@ -95,11 +94,9 @@ export async function sendOwnerRelaunchAnnouncement(
 
   const claimResponse = await fetch(`${baseUrl.replace(/\/$/, '')}/rest/v1/rpc/claim_owner_relaunch_email`, {
     method: 'POST',
-    headers: {
-      apikey: serviceKey,
-      Authorization: `Bearer ${serviceKey}`,
+    headers: buildSupabaseRestHeaders(serviceKey, {
       'Content-Type': 'application/json'
-    },
+    }),
     body: JSON.stringify({ p_email_type: type, p_recipient_email: recipient })
   });
   if (!claimResponse.ok) throw new Error('Could not claim the relaunch email delivery record.');
@@ -110,7 +107,7 @@ export async function sendOwnerRelaunchAnnouncement(
     if (!resendKey || !from) throw new Error('Resend announcement delivery is not configured on the server.');
     const snapshotResponse = await fetch(
       `${baseUrl.replace(/\/$/, '')}/rest/v1/owner_relaunch_emails?email_type=eq.${type}&select=generated_at`,
-      { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } }
+      { headers: buildSupabaseRestHeaders(serviceKey) }
     );
     if (!snapshotResponse.ok) throw new Error('Could not read the stored relaunch email countdown snapshot.');
     const snapshotRows = await snapshotResponse.json() as Array<{ generated_at?: unknown }>;

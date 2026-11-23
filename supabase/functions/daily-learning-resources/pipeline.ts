@@ -865,14 +865,38 @@ export async function revalidateCachedYouTubeRows(
   }
 }
 
+async function inspectYouTubeFailureResponse(resp: Response): Promise<{ isQuota: boolean; detail: string }> {
+  try {
+    const errJson = (await resp.json()) as {
+      error?: { message?: string; status?: string; errors?: Array<{ reason?: string }> };
+    };
+    const reason = errJson?.error?.errors?.[0]?.reason || errJson?.error?.status || '';
+    const rawMsg = errJson?.error?.message || '';
+    const isQuota =
+      resp.status === 429 ||
+      (resp.status === 403 && /quota|rateLimit/i.test(`${reason} ${rawMsg}`));
+    const safeMsg = rawMsg
+      .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[REDACTED]')
+      .replace(/key=[^&\s"']+/gi, 'key=[REDACTED]')
+      .slice(0, 140);
+    const detail = reason && safeMsg ? `${reason} (${safeMsg})` : safeMsg || reason || '';
+    return { isQuota, detail };
+  } catch {
+    return { isQuota: resp.status === 429, detail: '' };
+  }
+}
+
 async function discoverNonCodingTutorials(
   ctx: SharedCurriculumDayContext,
   apiKey: string,
   fetchImpl: typeof fetch
 ): Promise<YouTubeDiscoveryResult> {
-  const noSuitable = (statusNote = 'No suitable video found.') => ({
+  const noSuitable = (
+    statusNote = 'No suitable video found.',
+    providerStatus: YouTubeDiscoveryResult['providerStatus'] = 'unavailable'
+  ) => ({
     tutorials: [] as CanonicalYouTubeResource[],
-    providerStatus: 'unavailable' as const,
+    providerStatus,
     statusNote
   });
   try {
@@ -895,6 +919,7 @@ async function discoverNonCodingTutorials(
     }
 
     const candidates = new Map<string, NonCodingSearchCandidate[]>();
+    let quotaHit = false;
     for (const search of searchQueries) {
       const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
       searchUrl.searchParams.set('part', 'snippet');
@@ -906,7 +931,11 @@ async function discoverNonCodingTutorials(
       if (search.channelId) searchUrl.searchParams.set('channelId', search.channelId);
       searchUrl.searchParams.set('key', apiKey);
       const response = await fetchImpl(searchUrl.toString(), { signal: AbortSignal.timeout(8000) });
-      if (!response.ok) continue;
+      if (!response.ok) {
+        const failure = await inspectYouTubeFailureResponse(response);
+        if (failure.isQuota) quotaHit = true;
+        continue;
+      }
       const payload = await response.json() as { items?: YouTubeSearchItem[] };
       for (const item of payload.items || []) {
         const id = item.id?.videoId;
@@ -917,14 +946,23 @@ async function discoverNonCodingTutorials(
       }
     }
     const candidateIds = [...candidates.keys()];
-    if (!candidateIds.length) return noSuitable();
+    if (!candidateIds.length) {
+      return quotaHit
+        ? noSuitable('No suitable video found. YouTube Data API quota exceeded during verification.', 'search_fallback_quota')
+        : noSuitable();
+    }
 
     const detailsUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
     detailsUrl.searchParams.set('part', 'snippet,contentDetails,status,statistics');
     detailsUrl.searchParams.set('id', candidateIds.join(','));
     detailsUrl.searchParams.set('key', apiKey);
     const detailsResp = await fetchImpl(detailsUrl.toString(), { signal: AbortSignal.timeout(8000) });
-    if (!detailsResp.ok) return noSuitable();
+    if (!detailsResp.ok) {
+      const failure = await inspectYouTubeFailureResponse(detailsResp);
+      return failure.isQuota
+        ? noSuitable('No suitable video found. YouTube Data API quota exceeded during verification.', 'search_fallback_quota')
+        : noSuitable();
+    }
     const details = await detailsResp.json() as { items?: YouTubeVideoItem[] };
     const channelIds = [...new Set((details.items || []).map((video) => video.snippet?.channelId).filter((id): id is string => Boolean(id)))];
     if (!channelIds.length) return noSuitable();
@@ -934,7 +972,12 @@ async function discoverNonCodingTutorials(
     channelsUrl.searchParams.set('id', channelIds.join(','));
     channelsUrl.searchParams.set('key', apiKey);
     const channelsResp = await fetchImpl(channelsUrl.toString(), { signal: AbortSignal.timeout(8000) });
-    if (!channelsResp.ok) return noSuitable();
+    if (!channelsResp.ok) {
+      const failure = await inspectYouTubeFailureResponse(channelsResp);
+      return failure.isQuota
+        ? noSuitable('No suitable video found. YouTube Data API quota exceeded during verification.', 'search_fallback_quota')
+        : noSuitable();
+    }
     const channelPayload = await channelsResp.json() as { items?: YouTubeChannelItem[] };
     const channels = new Map((channelPayload.items || []).filter((channel): channel is YouTubeChannelItem & { id: string } => Boolean(channel.id)).map((channel) => [channel.id, channel]));
     const verified = (details.items || []).flatMap((video) => {
@@ -1013,26 +1056,6 @@ export async function discoverYouTubeTutorials(
       statusNote: 'No suitable video found. Verified topic recommendations require the YouTube Data API.'
     };
   }
-
-  const extractSanitizedYouTubeError = async (resp: Response): Promise<string> => {
-    try {
-      const errJson = (await resp.json()) as {
-        error?: { message?: string; status?: string; errors?: Array<{ reason?: string }> };
-      };
-      const reason = errJson?.error?.errors?.[0]?.reason || errJson?.error?.status || '';
-      const rawMsg = errJson?.error?.message || '';
-      const safeMsg = rawMsg
-        .replace(/AIza[0-9A-Za-z_-]{20,}/g, '[REDACTED]')
-        .replace(/key=[^&\s"']+/gi, 'key=[REDACTED]')
-        .slice(0, 140);
-      if (reason && safeMsg) return `${reason} (${safeMsg})`;
-      if (safeMsg) return safeMsg;
-      if (reason) return reason;
-      return '';
-    } catch {
-      return '';
-    }
-  };
 
   if (isCodingRelatedTopic(ctx)) return discoverApprovedCodingTutorials(ctx, apiKey, fetchImpl);
   if (role === 'guest') return discoverLegacyGuestNonCodingTutorials(ctx, apiKey, fetchImpl);

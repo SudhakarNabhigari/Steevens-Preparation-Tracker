@@ -234,24 +234,29 @@ export async function generateTrackDailyResources(
     }
   }
 
+  const role = options?.role || 'owner';
   const key = getCacheKey(trackId, dayNumber);
   const store = await readLocalDevStore();
   const expectedPlanDate = buildDeterministicReadOnlyTrack(trackId, dayNumber, config, undefined, scheduleStartIsoIst)?.planDate;
   const existingCached =
-    (isSupabaseServerConfigured(config)
-      ? await fetchTrackBriefFromSupabase(trackId, dayNumber, config, options?.role || 'owner')
-      : null) || store.resourcesByKey[key] || null;
+    role === 'owner'
+      ? (isSupabaseServerConfigured(config)
+          ? await fetchTrackBriefFromSupabase(trackId, dayNumber, config, 'owner')
+          : null) ||
+        store.resourcesByKey[key] ||
+        null
+      : null;
   const currentCycleCached = existingCached?.planDate === expectedPlanDate ? existingCached : null;
 
   const result = (await generateTrackDailyCanonical(trackId, dayNumber, config, {
-    forceRefresh: options?.forceRefresh,
-    persistToCloud: options?.persistToCloud,
+    forceRefresh: role === 'guest' ? false : options?.forceRefresh,
+    persistToCloud: role === 'guest' ? false : options?.persistToCloud,
     existingCached: currentCycleCached,
     scheduleStartIsoIst,
-    role: options?.role || 'owner'
+    role
   })) as TrackDailyAiResources;
 
-  if (!ephemeral) {
+  if (!ephemeral && role === 'owner') {
     store.resourcesByKey[key] = result;
     await persistLocalDevStore(store);
   }
@@ -282,9 +287,10 @@ export async function getDailyResourcesDashboard(options?: {
     if (!snapshot.isPreparationStarted || dayNumber < 1) return null;
 
     if (ephemeral) {
-      // Production / Vercel GET: read Supabase first, otherwise deterministic read-only view (zero file cache / zero server mutations)
-      if (sbConfigured && !(options?.forceRefresh && options?.track === trackId)) {
-        const fromDb = await fetchTrackBriefFromSupabase(trackId, dayNumber, config, options?.role || 'owner');
+      // Production / Vercel GET: read Supabase first for Owner only, otherwise deterministic read-only view (zero file cache / zero server mutations)
+      const activeRole = options?.role || 'owner';
+      if (activeRole === 'owner' && sbConfigured && !(options?.forceRefresh && options?.track === trackId)) {
+        const fromDb = await fetchTrackBriefFromSupabase(trackId, dayNumber, config, 'owner');
         const expectedPlanDate = buildDeterministicReadOnlyTrack(trackId, dayNumber, config, undefined, scheduleStartIsoIst)?.planDate;
         if (fromDb?.planDate === expectedPlanDate) return fromDb as TrackDailyAiResources;
       }

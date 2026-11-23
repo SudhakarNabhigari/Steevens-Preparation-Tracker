@@ -5,6 +5,30 @@ import { applyApiSecurityAndCorsHeaders } from '../../server/httpCors.ts';
 
 type RequestWithBody = IncomingMessage & { body?: unknown };
 
+async function readJsonBody(req: RequestWithBody): Promise<{ type?: unknown }> {
+  if (req.body && typeof req.body === 'object') {
+    return req.body as { type?: unknown };
+  }
+  const maxBytes = 64 * 1024;
+  let totalBytes = 0;
+  const chunks: Buffer[] = [];
+  for await (const chunk of req) {
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buf.length;
+    if (totalBytes > maxBytes) {
+      return {};
+    }
+    chunks.push(buf);
+  }
+  if (chunks.length === 0) return {};
+  try {
+    const parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return parsed && typeof parsed === 'object' ? (parsed as { type?: unknown }) : {};
+  } catch {
+    return {};
+  }
+}
+
 export default async function handler(req: RequestWithBody, res: ServerResponse) {
   if (applyApiSecurityAndCorsHeaders(req, res, { allowMethods: 'POST, OPTIONS', noStore: true })) return;
   res.setHeader('Content-Type', 'application/json');
@@ -19,7 +43,7 @@ export default async function handler(req: RequestWithBody, res: ServerResponse)
     res.end(JSON.stringify({ error: auth.error || 'Owner authentication required.' }));
     return;
   }
-  const body = req.body && typeof req.body === 'object' ? req.body as { type?: unknown } : {};
+  const body = await readJsonBody(req);
   if (body.type !== 'restart') {
     res.statusCode = 400;
     res.end(JSON.stringify({ error: 'Only the restart announcement can be requested here.' }));
