@@ -177,7 +177,7 @@ export const HomeDashboard: React.FC = () => {
           </p>
         </div>
         <div className="text-xs font-mono text-[#5A5650]">
-          {userRole === 'owner' ? 'Main: 23 Nov 2026 – 21 May 2027 · DSA & Azure: 23 Nov 2026 – 02 Mar 2027' : 'Main: 16 Nov 2026 – 14 May 2027 · DSA & Azure: 16 Nov 2026 – 23 Feb 2027'}
+          Main: 23 Nov 2026 – 21 May 2027 · DSA & Azure: 23 Nov 2026 – 02 Mar 2027
         </div>
       </div>
 
@@ -467,7 +467,8 @@ export const HomeDashboard: React.FC = () => {
 
         {/* 180 Day Boxes */}
         <div className="grid grid-cols-6 sm:grid-cols-10 md:grid-cols-15 lg:grid-cols-18 gap-1.5 sm:gap-2">
-          {ALL_180_DAYS.map(day => {
+          {ALL_180_DAYS.map(baseDay => {
+            const day = baseDay;
             const status = getDayStatus(day.dayNumber);
             const isCurrent = day.dayNumber === resumeDay;
             const { completed, total } = getDayTaskCompletion(day.dayNumber);

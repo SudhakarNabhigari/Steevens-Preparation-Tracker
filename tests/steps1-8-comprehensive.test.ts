@@ -133,14 +133,15 @@ test('Step 1: Unmarking tasks/days/AI resources in newer state persists across o
 // ============================================================================
 // STEP 2: YOUTUBE SEARCH+VIDEOS DISCOVERY, PRIVACY FILTERING & SECRET REDACTION
 // ============================================================================
-test('Step 2: YouTube discovery verifies public videos, strips private videos, redacts secrets on 400/403, and avoids redundant calls on cache hit', async () => {
+test('Step 2: YouTube discovery verifies public videos, redacts secrets, and revalidates cached recommendations', async () => {
   const ctx = getSharedCurriculumDayContext('azure', 2);
   assert.ok(ctx);
 
-  // 1. Missing API key fails closed without inventing topic recommendations
+  // 1. Missing API key uses curriculum-derived search links, never invented direct recommendations
   const noKey = await discoverYouTubeTutorials(ctx, '');
   assert.equal(noKey.providerStatus, 'unavailable');
-  assert.equal(noKey.tutorials.length, 0);
+  assert.equal(noKey.tutorials.length, 3);
+  assert.ok(noKey.tutorials.every((tutorial) => tutorial.linkKind === 'youtube_search_fallback' && tutorial.url.includes(encodeURIComponent(ctx.topic))));
   assert.match(noKey.statusNote, /No suitable video found/);
 
   // 2. Successful 2-step lookup filters private video and keeps verified metadata
@@ -167,11 +168,11 @@ test('Step 2: YouTube discovery verifies public videos, strips private videos, r
             {
               id: 'pub12345678',
               snippet: {
-                title: `${ctx.topic} Explained with Microsoft Azure`,
+                title: `${ctx.topic} ${ctx.objectives[0]} Explained with Microsoft Azure`,
                 channelTitle: 'Microsoft Azure',
                 channelId: 'UC0m-80FnNY2Qb7obvTL_2fA',
                 defaultAudioLanguage: 'en',
-                description: `Official educational walkthrough of ${ctx.topic} and Azure architecture.`,
+                description: `Official educational walkthrough of ${ctx.topic}, ${ctx.objectives.join(' ')}, and Azure architecture.`,
                 thumbnails: { high: { url: 'https://i.ytimg.com/vi/pub12345678/hqdefault.jpg' } }
               },
               contentDetails: { duration: 'PT1H02M05S' },
@@ -231,8 +232,8 @@ test('Step 2: YouTube discovery verifies public videos, strips private videos, r
   assert.equal(netFallback.providerStatus, 'unavailable');
   assert.equal(netFallback.statusNote.includes('AIzaSyThrownSecret'), false);
 
-  // 5. Cache hit avoids external YouTube & Gemini requests
-  let shouldNotCallYt = 0;
+  // 5. Cached direct links are revalidated against current metadata before reuse
+  let verificationCalls = 0;
   let shouldNotCallGemini = 0;
   const day2Deterministic = buildDeterministicReadOnlyTrack('dsa', 2, {});
   assert.ok(day2Deterministic);
@@ -243,7 +244,7 @@ test('Step 2: YouTube discovery verifies public videos, strips private videos, r
       geminiApiKey: 'fake-gemini',
       youtubeApiKey: 'fake-yt',
       fetchImpl: async () => {
-        shouldNotCallYt += 1;
+        verificationCalls += 1;
         return new Response(null, { status: 500 });
       },
       geminiCaller: async () => {
@@ -264,8 +265,8 @@ test('Step 2: YouTube discovery verifies public videos, strips private videos, r
       }
     }
   );
-  assert.equal(cachedResult.status, 'cached');
-  assert.equal(shouldNotCallYt, 0);
+  assert.equal(verificationCalls > 0, true);
+  assert.equal(cachedResult.youtubeTutorials.some((tutorial) => tutorial.isVerifiedVideo), false);
   assert.equal(shouldNotCallGemini, 0);
 });
 
@@ -278,12 +279,12 @@ test('Step 3: 380-day curriculum continuity, 100% client/Edge parity, Azure Micr
   assert.equal(AZURE_100_DAYS.length, 100);
   assert.equal(WEEKLY_ASSESSMENTS.length, 26);
 
-  assert.equal(ALL_180_DAYS[0].isoDate, '2026-11-16');
-  assert.equal(ALL_180_DAYS[179].isoDate, '2027-05-14');
-  assert.equal(DSA_100_DAYS[0].isoDate, '2026-11-16');
-  assert.equal(DSA_100_DAYS[99].isoDate, '2027-02-23');
-  assert.equal(AZURE_100_DAYS[0].isoDate, '2026-11-16');
-  assert.equal(AZURE_100_DAYS[99].isoDate, '2027-02-23');
+  assert.equal(ALL_180_DAYS[0].isoDate, '2026-11-23');
+  assert.equal(ALL_180_DAYS[179].isoDate, '2027-05-21');
+  assert.equal(DSA_100_DAYS[0].isoDate, '2026-11-23');
+  assert.equal(DSA_100_DAYS[99].isoDate, '2027-03-02');
+  assert.equal(AZURE_100_DAYS[0].isoDate, '2026-11-23');
+  assert.equal(AZURE_100_DAYS[99].isoDate, '2027-03-02');
 
   // Verify every single day across all 3 tracks matches Edge catalogData 1:1
   for (let i = 0; i < 180; i += 1) {
@@ -641,10 +642,10 @@ test('Step 8: Weekly assessment locks, rubric scoring pass gate, IST day lock bo
     assert.equal(isAssessmentUnlockedByIstClock(week, ms - 1), false);
     assert.equal(isAssessmentUnlockedByIstClock(week, ms), true);
   }
-  assert.equal(getDayUnlockIsoIst(1), '2026-11-16T00:00:00+05:30');
-  assert.equal(getDayUnlockIsoIst(180), '2027-05-14T00:00:00+05:30');
-  assert.equal(isDayUnlockedByIstClock(1, new Date('2026-11-15T23:59:59+05:30').getTime()), false);
-  assert.equal(getUnlockedDayCountByIstClock(new Date('2026-11-18T10:00:00+05:30').getTime(), 180), 3);
+  assert.equal(getDayUnlockIsoIst(1), '2026-11-23T00:00:00+05:30');
+  assert.equal(getDayUnlockIsoIst(180), '2027-05-21T00:00:00+05:30');
+  assert.equal(isDayUnlockedByIstClock(1, new Date('2026-11-22T23:59:59+05:30').getTime()), false);
+  assert.equal(getUnlockedDayCountByIstClock(new Date('2026-11-25T10:00:00+05:30').getTime(), 180), 3);
 
   // Weekly assessment evaluation & written self-review rubric scoring (passThreshold = 70%)
   const week1Assessment = WEEKLY_ASSESSMENTS[0];

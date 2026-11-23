@@ -51,7 +51,7 @@ export const SettingsPage: React.FC = () => {
   const [sharedSavedSuccess, setSharedSavedSuccess] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
-  const [customSimDate, setCustomSimDate] = useState('2026-11-16');
+  const [customSimDate, setCustomSimDate] = useState('2026-11-23');
 
   useEffect(() => {
     if (state.sharedSettings) {
@@ -396,7 +396,7 @@ export const SettingsPage: React.FC = () => {
 
           <div className="p-3.5 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl">
             <span className="text-[#78716C] font-semibold block mb-1">Preparation Window</span>
-            <span className="font-mono font-bold text-[#292929]">{isOwner ? '23 Nov 2026 – 21 May 2027' : '16 Nov 2026 – 14 May 2027'}</span>
+            <span className="font-mono font-bold text-[#292929]">23 Nov 2026 – 21 May 2027</span>
             <span className="text-[10px] text-[#78716C] block mt-1">180 Consecutive Days of Structured Learning</span>
           </div>
         </div>
@@ -441,17 +441,17 @@ export const SettingsPage: React.FC = () => {
               </button>
 
               <button
-                onClick={() => setSimulationMode(true, '2026-11-16T09:00:00+05:30')}
+                onClick={() => setSimulationMode(true, '2026-11-23T09:00:00+05:30')}
                 className="px-3.5 py-2 rounded-xl bg-white hover:bg-[#FAF8F5] text-[#292929] border border-[#E0DCD3] text-xs font-semibold cursor-pointer transition-colors"
               >
-                Preview Day 1 Date (16 Nov 2026)
+                Preview Day 1 Date (23 Nov 2026)
               </button>
 
               <button
-                onClick={() => setSimulationMode(true, '2026-11-21T09:00:00+05:30')}
+                onClick={() => setSimulationMode(true, '2026-11-28T09:00:00+05:30')}
                 className="px-3.5 py-2 rounded-xl bg-white hover:bg-[#FAF8F5] text-[#292929] border border-[#E0DCD3] text-xs font-semibold cursor-pointer transition-colors"
               >
-                Preview Day 6 Date (21 Nov 2026)
+                Preview Day 6 Date (28 Nov 2026)
               </button>
             </div>
 
@@ -459,8 +459,8 @@ export const SettingsPage: React.FC = () => {
               <input
                 type="date"
                 value={customSimDate}
-                min="2026-11-16"
-                max="2027-05-14"
+                min="2026-11-23"
+                max="2027-05-21"
                 onChange={(e) => setCustomSimDate(e.target.value)}
                 className="px-3 py-1.5 bg-[#FAF8F5] border border-[#E0DCD3] rounded-xl text-xs text-[#292929] focus:outline-none focus:border-[#E7826D]"
               />

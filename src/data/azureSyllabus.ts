@@ -2,14 +2,14 @@ import type { TrackChecklistItem, TrackDaySchedule } from '../types';
 
 export const AZURE_PDF_URL = '/assets/aistudio/Azure_100_Day_180_Style_Daily_Curriculum_a614b703.pdf';
 export const AZURE_PDF_FILENAME = 'Azure_100_Day_180_Style_Daily_Curriculum.pdf';
-export const AZURE_START_DATE = '16 Nov 2026';
-export const AZURE_END_DATE = '23 Feb 2027';
+export const AZURE_START_DATE = '23 Nov 2026';
+export const AZURE_END_DATE = '02 Mar 2027';
 
 export const AZURE_PLAN_OVERVIEW = {
   title: 'AZURE — 100-DAY COMPLETE DAILY PREPARATION PLAN',
   subtitle: '180-day RAG plan-style daily curriculum · AZ-900 + DP-900 + AI-102 only',
   calendarSummary:
-    'Calendar: 16 November 2026 – 23 February 2027 | Monday–Friday: 1 hour | Saturday: 1 hour revision | Sunday: 1 hour revision | Total: 100 consecutive calendar days.',
+    'Calendar: 23 November 2026 – 02 March 2027 | Monday–Friday: 1 hour | Saturday: 1 hour revision | Sunday: 1 hour revision | Total: 100 consecutive calendar days.',
   dailyStructure:
     'Every day contains a defined topic or revision theme, Class focus, Objective, Student work and Milestone / output. Weekday topics are sequenced in order. Saturday is a weekly practical revision/checkpoint; Sunday consolidates the week and prepares for the next one.',
   scopeNote:
@@ -823,7 +823,7 @@ const WEEKDAYS: TrackDaySchedule['dayOfWeek'][] = [
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 export const AZURE_100_DAYS: TrackDaySchedule[] = RAW_AZURE_DAYS.map((raw) => {
-  const d = new Date(Date.UTC(2026, 10, 16 + (raw.day - 1)));
+  const d = new Date(Date.UTC(2026, 10, 23 + (raw.day - 1)));
   const dayOfWeek = WEEKDAYS[d.getUTCDay()];
   const isWeekendRevision = dayOfWeek === 'Saturday' || dayOfWeek === 'Sunday';
   const targetMinutes = 60;

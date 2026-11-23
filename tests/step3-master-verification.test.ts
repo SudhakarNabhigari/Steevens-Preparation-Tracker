@@ -551,7 +551,7 @@ test('Stage 6: Renders branded Main/DSA/Azure/Combined emails + serves read-only
     const previewDsa = await fetch(
       `http://127.0.0.1:${port}/api/daily-resources/email-preview?track=dsa&day=1`
     );
-    assert.equal(previewDsa.status, 403, 'Owner Day 1 email preview remains locked until the relaunch date.');
+    assert.equal(previewDsa.status, 200, 'Owner Day 1 email preview is available after the relaunch date.');
 
     const badTrack = await fetch(
       `http://127.0.0.1:${port}/api/daily-resources/email-preview?track=invalid`

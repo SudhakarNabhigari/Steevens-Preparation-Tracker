@@ -12,7 +12,7 @@ export interface Subtask {
 export interface DaySchedule {
   dayNumber: number; // 1 to 180
   dateString: string; // e.g. "16 Nov 2026"
-  isoDate: string; // "2026-11-16"
+  isoDate: string; // IST calendar date, YYYY-MM-DD
   dayOfWeek: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
   weekNumber: number; // 1 to 26
   targetHours: number; // 4 for Mon-Fri, 3 for Sat & Sun
@@ -41,7 +41,7 @@ export interface TrackDaySchedule {
   trackId: 'dsa' | 'azure';
   dayNumber: number; // 1 to 100
   dateString: string; // e.g. "16 Nov 2026"
-  isoDate: string; // "2026-11-16"
+  isoDate: string; // IST calendar date, YYYY-MM-DD
   dayOfWeek: 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday' | 'Sunday';
   weekNumber: number; // 1 to 15
   targetMinutes: number; // DSA: 90 Mon-Fri, 120 Sat-Sun | Azure: 60 all days
@@ -302,7 +302,7 @@ export interface UserState {
   trackTimerSnapshots?: Partial<Record<TrackId, TimerState>>;
   dsaProgress: TrackProgressState;
   azureProgress: TrackProgressState;
-  simulationDate: string | null; // e.g. "2026-11-16T10:00:00.000Z" when testing fast-forward
+  simulationDate: string | null; // e.g. "2026-11-23T10:00:00.000Z" when testing fast-forward
   simulationEnabled: boolean;
   uploadedPdfs: RoadmapPdfRecord[];
   activePdfId: string;

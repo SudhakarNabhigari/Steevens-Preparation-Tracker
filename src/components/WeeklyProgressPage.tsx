@@ -1,7 +1,6 @@
 import React from 'react';
 import { useApp } from '../context/AppContext';
 import { ALL_180_DAYS } from '../data/syllabus';
-import { shiftScheduleDate } from '../utils/relaunch';
 import {
   Award,
   TrendingUp
@@ -10,7 +9,6 @@ import {
 export const WeeklyProgressPage: React.FC = () => {
   const {
     state,
-    userRole,
     getDayStatus,
     getDayTaskCompletion,
     setSelectedDayNumber,
@@ -21,7 +19,7 @@ export const WeeklyProgressPage: React.FC = () => {
   const totalWeeks = 26;
   const weeklyData = Array.from({ length: totalWeeks }, (_, i) => i + 1).map(wk => {
     const sourceDays = ALL_180_DAYS.filter(d => d.weekNumber === wk);
-    const daysInWeek = userRole === 'owner' ? sourceDays.map((day) => shiftScheduleDate(day, 7)) : sourceDays;
+    const daysInWeek = sourceDays;
     if (daysInWeek.length === 0) return null;
 
     let totalTasksInWeek = 0;

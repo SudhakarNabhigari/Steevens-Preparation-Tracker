@@ -3,7 +3,7 @@ import { useApp } from '../context/AppContext';
 import { ALL_180_DAYS } from '../data/syllabus';
 
 export const OverallProgressBar: React.FC = () => {
-  const { state, currentDayNumber, userRole } = useApp();
+  const { state, currentDayNumber } = useApp();
   
   const completedCount = Object.values(state.completedDays).filter(Boolean).length;
   const percentage = Math.round((completedCount / 180) * 100);
@@ -25,9 +25,9 @@ export const OverallProgressBar: React.FC = () => {
         />
       </div>
       <div className="flex justify-between items-center text-[11px] text-[#736E65] mt-2 font-mono">
-        <span>Day 1 ({userRole === 'owner' ? '23 Nov 2026' : '16 Nov 2026'})</span>
+        <span>Day 1 (23 Nov 2026)</span>
         <span>Position: Day {state.lastActiveDayNumber || currentDayNumber}</span>
-        <span>Day 180 ({userRole === 'owner' ? '21 May 2027' : '14 May 2027'})</span>
+        <span>Day 180 (21 May 2027)</span>
       </div>
     </div>
   );

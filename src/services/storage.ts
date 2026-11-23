@@ -1089,7 +1089,22 @@ export async function resetGuestPreviewState(
     throw new Error('Guest preview reset could not be saved to browser storage.');
   }
   const storedGuest = await loadFromIndexedDB<UserState>(GUEST_STORAGE_KEY);
-  if (storedGuest && (storedGuest.lastSavedTimestamp || '') > freshGuest.lastSavedTimestamp!) {
+  const stableGuestState = (state: UserState) => {
+    const normalize = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(normalize);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value as Record<string, unknown>)
+            .sort(([left], [right]) => left.localeCompare(right))
+            .map(([key, entry]) => [key, normalize(entry)])
+        );
+      }
+      return value;
+    };
+    const { lastSavedTimestamp: _timestamp, ...persistedState } = state;
+    return JSON.stringify(normalize(persistedState));
+  };
+  if (storedGuest && stableGuestState(storedGuest) !== stableGuestState(freshGuest)) {
     const clearedStaleCache = await deleteFromIndexedDB(GUEST_STORAGE_KEY);
     if (!clearedStaleCache) throw new Error('A stale Guest-only browser cache could not be cleared.');
   }

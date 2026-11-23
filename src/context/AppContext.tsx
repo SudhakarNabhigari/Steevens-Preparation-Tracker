@@ -19,10 +19,7 @@ import {
   WrittenReviewStatus,
   WeeklyReviewNotes
 } from '../types';
-import {
-  ALL_180_DAYS,
-  START_DATE_IST
-} from '../data/syllabus';
+import { ALL_180_DAYS } from '../data/syllabus';
 import { DSA_100_DAYS } from '../data/dsaSyllabus';
 import { AZURE_100_DAYS } from '../data/azureSyllabus';
 import { getUnlockedAssessmentForWeek } from '../data/assessments';
@@ -234,7 +231,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const START_DATE_MS = new Date(START_DATE_IST).getTime();
+const START_DATE_MS = new Date(DAILY_PREPARATION_START_ISO_IST).getTime();
 const preparationStartForRole = (role: UserRole) => role === 'owner' ? OWNER_RELAUNCH_START_ISO_IST : DAILY_PREPARATION_START_ISO_IST;
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -644,12 +641,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const currentDaySchedule = useMemo(() => {
     const schedule = ALL_180_DAYS[currentDayNumber - 1] || ALL_180_DAYS[0];
-    if (state.role !== 'owner') return schedule;
-    const shifted = new Date(new Date(schedule.isoDate + 'T00:00:00Z').getTime() + 7 * 86_400_000);
-    const isoDate = shifted.toISOString().slice(0, 10);
-    const dateString = shifted.toLocaleDateString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', year: 'numeric' });
-    return { ...schedule, isoDate, dateString };
-  }, [currentDayNumber, state.role]);
+    return schedule;
+  }, [currentDayNumber]);
 
   const isSaturdayToday = useMemo(() => {
     if (nowTimestamp < (state.role === 'owner' ? OWNER_RELAUNCH_START_MS : START_DATE_MS)) return false;
@@ -1926,7 +1919,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     (enabled: boolean, isoDate?: string) => {
       if (state.role !== 'owner') return;
       setTestModeEnabled(enabled);
-      setTestModeDate(enabled ? isoDate || '2026-11-16T09:00:00+05:30' : null);
+      setTestModeDate(enabled ? isoDate || '2026-11-23T09:00:00+05:30' : null);
     },
     [state.role]
   );

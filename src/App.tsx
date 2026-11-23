@@ -82,7 +82,7 @@ const AppContent: React.FC = () => {
             STEEVEN'S 180-DAY PREPARATION TRACKER · Main (180d) · DSA in C++ (100d) · Azure (100d)
           </span>
           <span className="font-mono">
-            {userRole === 'owner' ? '23 November 2026 – 21 May 2027' : '16 November 2026 – 14 May 2027'} · Asia/Kolkata (IST)
+            23 November 2026 – 21 May 2027 · Asia/Kolkata (IST)
           </span>
         </div>
       </footer>

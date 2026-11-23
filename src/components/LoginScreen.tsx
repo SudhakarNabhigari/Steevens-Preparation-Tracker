@@ -64,7 +64,7 @@ export const LoginScreen: React.FC = () => {
             STEEVEN'S 180-DAY PREPARATION TRACKER
           </h1>
           <p className="text-xs text-[#5A5650] max-w-sm mx-auto">
-            End-to-End Production RAG Learning System | 16 Nov 2026 - 14 May 2027
+            End-to-End Production RAG Learning System | 23 Nov 2026 - 21 May 2027
           </p>
         </div>
 

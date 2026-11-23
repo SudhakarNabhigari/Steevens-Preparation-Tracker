@@ -367,7 +367,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
             26-WEEK WEEKLY ASSESSMENTS
           </h1>
           <p className="text-xs sm:text-sm text-[#78716C] mt-1">
-            {userRole === 'owner' ? '23 Nov 2026 â€“ 21 May 2027' : '16 Nov 2026 â€“ 14 May 2027'} Â· Strict 00:00 IST date lock Â· 100 Pts/Week + 130 Verified LeetCode Problems.
+            23 Nov 2026 â€“ 21 May 2027 Â· Strict 00:00 IST date lock Â· 100 Pts/Week + 130 Verified LeetCode Problems.
           </p>
         </div>
 
@@ -497,7 +497,7 @@ export const WeeklyAssessmentsPage: React.FC = () => {
                   <span>W{wk}</span>
                 </div>
                 <span className="text-[9px] font-mono opacity-80 truncate max-w-full">
-                  {wk === 26 ? '14 May' : meta.scheduledDate.slice(0, 6)}
+                  {wk === 26 ? '21 May' : meta.scheduledDate.slice(0, 6)}
                 </span>
               </button>
             );

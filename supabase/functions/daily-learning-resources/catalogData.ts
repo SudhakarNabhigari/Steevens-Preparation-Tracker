@@ -18862,6 +18862,17 @@ export const OFFICIAL_DOCS_BY_TRACK_DAY: Record<string, SharedDailyReferenceLink
   ]
 };
 
+// Curriculum content was authored against the prior Nov 16 calendar. Rebase its
+// date metadata once to the official Nov 23 IST cycle; topics and weekday order stay intact.
+const LEGACY_CYCLE_OFFSET_DAYS = 7;
+const DATE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+for (const context of [...MAIN_CURRICULUM_CONTEXTS, ...DSA_CURRICULUM_CONTEXTS, ...AZURE_CURRICULUM_CONTEXTS]) {
+  const date = new Date(`${context.isoDate}T00:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + LEGACY_CYCLE_OFFSET_DAYS);
+  context.isoDate = date.toISOString().slice(0, 10);
+  context.dateLabel = `${String(date.getUTCDate()).padStart(2, '0')} ${DATE_MONTHS[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
 export function getSharedCurriculumDayContext(trackId: SharedTrackId, dayNumber: number): SharedCurriculumDayContext | null {
   if (!Number.isInteger(dayNumber) || dayNumber < 1) return null;
   if (trackId === 'main') return MAIN_CURRICULUM_CONTEXTS[dayNumber - 1] || null;

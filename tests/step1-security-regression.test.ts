@@ -188,7 +188,7 @@ test('3. Guest or wrong user JWT cannot access Owner-only endpoints (403)', asyn
   }
 });
 
-test('4. Verified Owner JWT passes verification while pre-launch progress writes remain locked', async () => {
+test('4. Verified Owner JWT authorizes Day 1 resource refresh after the official launch', async () => {
   const mockOwnerJwtFetch: typeof fetch = async () =>
     new Response(
       JSON.stringify({ id: 'owner-uuid-1111', email: 'owner@example.com' }),
@@ -229,9 +229,7 @@ test('4. Verified Owner JWT passes verification while pre-launch progress writes
       },
       body: JSON.stringify({ trackId: 'main', dayNumber: 1 })
     });
-    assert.equal(refreshResp.status, 403, 'Owner refresh remains locked until the approved Day 1 launch.');
-    const body = (await refreshResp.json()) as { error: string };
-    assert.match(body.error, /locked until its scheduled IST unlock date/i);
+    assert.equal(refreshResp.status, 200, 'Owner Day 1 resources are available after the approved launch date.');
   } finally {
     if (prevVercel === undefined) delete process.env.VERCEL;
     else process.env.VERCEL = prevVercel;
@@ -382,9 +380,9 @@ test('10. Main (180d), DSA (100d), and Azure (100d) progress structures remain i
 // 11–13. IST DATE LOCKS, CURRICULUM PARITY, LEETCODE TRIPLET & ROUTE LOCKS
 // ============================================================================
 test('11. IST day locks and 26-week assessment locks remain strictly enforced', async () => {
-  const beforeStartMs = new Date('2026-11-15T23:59:59+05:30').getTime();
-  const day1Ms = new Date('2026-11-16T00:00:00+05:30').getTime();
-  const day2Ms = new Date('2026-11-17T00:00:00+05:30').getTime();
+  const beforeStartMs = new Date('2026-11-22T23:59:59+05:30').getTime();
+  const day1Ms = new Date('2026-11-23T00:00:00+05:30').getTime();
+  const day2Ms = new Date('2026-11-24T00:00:00+05:30').getTime();
 
   assert.equal(isDayUnlockedByIstClock(1, beforeStartMs, 180), false);
   assert.equal(isDayUnlockedByIstClock(1, day1Ms, 180), true);
@@ -393,10 +391,10 @@ test('11. IST day locks and 26-week assessment locks remain strictly enforced', 
   assert.equal(isTrackDayCurrentlyUnlockedCanonical('main', 180, day2Ms), false);
   assert.equal(isTrackDayCurrentlyUnlockedCanonical('dsa', 101, day2Ms), false);
 
-  // Assessment Week 1 unlocks Day 6 (21 Nov 2026 00:00 IST)
+  // Assessment Week 1 unlocks Day 6 (28 Nov 2026 00:00 IST)
   assert.equal(isAssessmentUnlockedByIstClock(1, day2Ms), false);
   assert.equal(getUnlockedAssessmentForWeek(1, day2Ms), null);
-  const week1UnlockMs = new Date('2026-11-21T00:00:00+05:30').getTime();
+  const week1UnlockMs = new Date('2026-11-28T00:00:00+05:30').getTime();
   assert.equal(isAssessmentUnlockedByIstClock(1, week1UnlockMs), true);
   assert.ok(getUnlockedAssessmentForWeek(1, week1UnlockMs));
 

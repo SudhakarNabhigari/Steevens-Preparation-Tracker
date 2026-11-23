@@ -109,7 +109,7 @@ export const Navigation: React.FC = () => {
                     timeZone: 'Asia/Kolkata',
                     dateStyle: 'full'
                   })
-                : '16 November 2026'}{' '}
+                : '23 November 2026'}{' '}
               · Production IST locks & saved progress remain protected.
             </span>
           </div>

@@ -524,6 +524,7 @@ interface YouTubeVideoItem {
     description?: string;
     defaultAudioLanguage?: string;
     defaultLanguage?: string;
+    tags?: string[];
     thumbnails?: {
       medium?: { url?: string };
       high?: { url?: string };
@@ -586,23 +587,27 @@ export function isCodingRelatedTopic(ctx: SharedCurriculumDayContext): boolean {
 }
 
 export function buildSearchFallbackTutorials(_ctx: SharedCurriculumDayContext): CanonicalYouTubeResource[] {
-  return [];
-}
-
-function buildLegacyGuestSearchFallbackTutorials(ctx: SharedCurriculumDayContext): CanonicalYouTubeResource[] {
-  if (isCodingRelatedTopic(ctx)) return [];
-  return buildTrackQueryTerms(ctx).map((query, index) => ({
-    id: `yt_${ctx.trackId}_d${ctx.dayNumber}_guest_search_${index + 1}`,
-    title: `YouTube Search: ${ctx.topic}`,
+  return buildTrackQueryTerms(_ctx).map((query, index) => ({
+    id: `yt_${_ctx.trackId}_d${_ctx.dayNumber}_search_${index + 1}`,
+    title: `Search YouTube for ${_ctx.topic}`,
     channelName: 'YouTube topic search',
     url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
-    topicCovered: ctx.topic,
-    explanation: `YouTube search results for ${ctx.topic}.`,
-    whyUseful: `Guest topic search link for ${ctx.topic}.`,
-    language: 'en',
+    topicCovered: _ctx.topic,
+    explanation: `Search results for ${_ctx.topic} and its Day ${_ctx.dayNumber} learning objectives.`,
+    whyUseful: `Topic-specific search using ${_ctx.topic} and curriculum objectives.`,
+    language: index === 0 ? 'te' : 'en',
     isVerifiedVideo: false,
     linkKind: 'youtube_search_fallback'
   }));
+}
+
+function buildLegacyGuestSearchFallbackTutorials(ctx: SharedCurriculumDayContext): CanonicalYouTubeResource[] {
+  return buildSearchFallbackTutorials(ctx);
+}
+
+function isLikelyShortVideo(video: YouTubeVideoItem): boolean {
+  const metadata = `${video.snippet?.title || ''} ${video.snippet?.description || ''} ${(video.snippet?.tags || []).join(' ')}`;
+  return /(?:^|\s)#?shorts?(?:\s|$|[.,!?])/i.test(metadata);
 }
 
 async function discoverApprovedCodingTutorials(
@@ -643,16 +648,14 @@ async function discoverApprovedCodingTutorials(
     const videosResp = await fetchImpl(videosUrl.toString(), { signal: AbortSignal.timeout(8000) });
     if (!videosResp.ok) return noSuitable(`No suitable video found. YouTube video verification returned HTTP ${videosResp.status}.`, videosResp.status === 403 || videosResp.status === 429 ? 'search_fallback_quota' : 'unavailable');
     const videosJson = await videosResp.json() as { items?: YouTubeVideoItem[] };
-    const topicTerms = ctx.topic.toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length > 2);
     const approved = (videosJson.items || []).filter((video) => {
       const channelAllowed = APPROVED_CODING_CHANNELS.some((channel) => channel.channelId === video.snippet?.channelId);
       const duration = parseIsoDurationToSeconds(video.contentDetails?.duration);
-      const searchable = `${video.snippet?.title || ''} ${video.snippet?.description || ''}`.toLowerCase();
       return Boolean(
         video.id && video.snippet?.title && video.snippet.channelTitle && channelAllowed &&
-        (!video.status?.privacyStatus || video.status.privacyStatus === 'public') &&
-        duration >= 120 && !/\bshorts?\b/i.test(video.snippet.title) &&
-        topicTerms.some((term) => searchable.includes(term))
+        video.status?.privacyStatus === 'public' &&
+        duration >= 180 && !isLikelyShortVideo(video) &&
+        hasMeaningfulTopicRelevance(ctx, video.snippet.title, video.snippet.description || '')
       );
     });
     const selected = approved.slice(0, 3);
@@ -684,7 +687,6 @@ async function discoverApprovedCodingTutorials(
 }
 
 interface NonCodingSearchCandidate {
-  searchLanguage: 'te' | 'en';
   searchChannelId?: string;
 }
 
@@ -695,19 +697,46 @@ interface YouTubeChannelItem {
 }
 
 function getTopicTerms(topic: string): string[] {
-  const stopWords = new Set(['the', 'and', 'for', 'with', 'from', 'what', 'how', 'into', 'about', 'using', 'introduction', 'fundamentals']);
-  return topic.toLowerCase().split(/[^a-z0-9]+/).filter((term) => term.length > 2 && !stopWords.has(term));
+  const stopWords = new Set([
+    'the', 'and', 'for', 'with', 'from', 'what', 'how', 'into', 'about', 'using', 'introduction',
+    'fundamentals', 'concepts', 'learn', 'learning', 'understand', 'explained', 'explanation',
+    'tutorial', 'course', 'training', 'guide', 'overview', 'basics', 'basic', 'today'
+  ]);
+  const normalized = topic.toLowerCase()
+    .replace(/c\+\+/g, 'cplusplus')
+    .replace(/c#/g, 'csharp')
+    .replace(/\.net/g, 'dotnet')
+    .replace(/az-(\d+)/g, 'az$1')
+    .replace(/dp-(\d+)/g, 'dp$1')
+    .replace(/ai-(\d+)/g, 'ai$1');
+  return [...new Set(normalized.split(/[^a-z0-9]+/).filter((term) => term.length > 2 && !stopWords.has(term)))];
 }
 
-function detectVideoLanguage(video: YouTubeVideoItem, searchLanguage: 'te' | 'en'): string {
+function hasMeaningfulTopicRelevance(ctx: SharedCurriculumDayContext, title: string, description: string): boolean {
+  const topicTerms = getTopicTerms(ctx.topic);
+  const objectiveTerms = getTopicTerms(ctx.objectives.join(' '));
+  if (topicTerms.length === 0 || objectiveTerms.length === 0) return false;
+
+  const titleTerms = new Set(getTopicTerms(title));
+  const descriptionTerms = new Set(getTopicTerms(description));
+  const allTerms = new Set([...titleTerms, ...descriptionTerms]);
+  const topicMatches = topicTerms.filter((term) => allTerms.has(term)).length;
+  const titleTopicMatches = topicTerms.filter((term) => titleTerms.has(term)).length;
+  const objectiveMatches = objectiveTerms.filter((term) => allTerms.has(term)).length;
+  const titleObjectiveMatches = objectiveTerms.filter((term) => titleTerms.has(term)).length;
+  return titleTopicMatches >= Math.min(2, topicTerms.length) &&
+    topicMatches >= Math.min(2, topicTerms.length) &&
+    objectiveMatches >= Math.min(2, objectiveTerms.length) &&
+    titleObjectiveMatches >= 1 &&
+    new Set([...topicTerms.filter((term) => allTerms.has(term)), ...objectiveTerms.filter((term) => allTerms.has(term))]).size >= 3;
+}
+
+function detectVideoLanguage(video: YouTubeVideoItem): string {
   const languageTag = (video.snippet?.defaultAudioLanguage || video.snippet?.defaultLanguage || '').toLowerCase();
   if (languageTag.startsWith('te')) return 'te';
   if (languageTag.startsWith('en')) return 'en';
   const text = `${video.snippet?.title || ''} ${video.snippet?.description || ''}`;
   if (/[\u0C00-\u0C7F]/.test(text)) return 'te';
-  const letters = text.match(/[a-z]/gi)?.length || 0;
-  const nonLatinLetters = text.match(/[^\x00-\x7F\s\p{P}\p{N}]/gu)?.length || 0;
-  if (letters > 8 && nonLatinLetters === 0) return searchLanguage;
   return 'unknown';
 }
 
@@ -721,24 +750,29 @@ function isEducationalChannel(channel: YouTubeChannelItem | undefined): boolean 
   return educational && videos >= 10 && subscribers >= 5_000;
 }
 
-function isReusableVerifiedTutorial(ctx: SharedCurriculumDayContext, tutorial: CanonicalYouTubeResource, role: 'owner' | 'guest'): boolean {
-  if (role === 'guest' && !isCodingRelatedTopic(ctx)) {
-    return tutorial.isVerifiedVideo || tutorial.linkKind === 'youtube_search_fallback';
-  }
+function isReusableVerifiedTutorial(ctx: SharedCurriculumDayContext, tutorial: CanonicalYouTubeResource): boolean {
+  if (tutorial.linkKind === 'youtube_search_fallback') return true;
   if (!tutorial.isVerifiedVideo || !tutorial.channelId || !tutorial.videoId || !isValidHttpsUrl(tutorial.url)) return false;
+  if (cachedVideoId(tutorial.url) !== tutorial.videoId || parseFormattedDuration(tutorial.duration) < 180) return false;
+  if (isLikelyShortVideo({ snippet: { title: tutorial.title, description: tutorial.explanation } })) return false;
+  if (!hasMeaningfulTopicRelevance(ctx, tutorial.title, tutorial.explanation)) return false;
   if (isCodingRelatedTopic(ctx)) {
     return APPROVED_CODING_CHANNELS.some((channel) => channel.channelId === tutorial.channelId);
   }
-  return (tutorial.language === 'te' || tutorial.language === 'en') && tutorial.whyUseful.startsWith('Verified non-coding video:');
+  const approvedAzureChannel = ctx.trackId === 'azure' && APPROVED_AZURE_CHANNELS.some((channel) => channel.channelId === tutorial.channelId);
+  const educationalChannelName = /learn|learning|education|educational|training|tutorial|course|technology|cloud|certification|instructor|academy|engineering|microsoft/i.test(tutorial.channelName);
+  return (tutorial.language === 'te' || tutorial.language === 'en') && (approvedAzureChannel || educationalChannelName);
 }
 
-function reusableTutorials(ctx: SharedCurriculumDayContext, tutorials: CanonicalYouTubeResource[], role: 'owner' | 'guest'): CanonicalYouTubeResource[] {
-  return tutorials.filter((tutorial) => isReusableVerifiedTutorial(ctx, tutorial, role));
+function reusableTutorials(ctx: SharedCurriculumDayContext, tutorials: CanonicalYouTubeResource[]): CanonicalYouTubeResource[] {
+  return tutorials.filter((tutorial) => isReusableVerifiedTutorial(ctx, tutorial));
 }
 
 function cachedVideoId(url: string): string | null {
   try {
     const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' || !['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com', 'youtu.be'].includes(parsed.hostname.toLowerCase())) return null;
+    if (/^\/shorts\//i.test(parsed.pathname)) return null;
     const candidate = parsed.hostname === 'youtu.be'
       ? parsed.pathname.slice(1)
       : parsed.searchParams.get('v') || parsed.pathname.match(/\/(?:shorts|embed)\/([^/?]+)/)?.[1];
@@ -746,6 +780,13 @@ function cachedVideoId(url: string): string | null {
   } catch {
     return null;
   }
+}
+
+function parseFormattedDuration(duration?: string): number {
+  if (!duration) return 0;
+  const parts = duration.split(':').map(Number);
+  if (parts.some((part) => !Number.isInteger(part) || part < 0) || parts.length < 2 || parts.length > 3) return 0;
+  return parts.length === 3 ? parts[0] * 3600 + parts[1] * 60 + parts[2] : parts[0] * 60 + parts[1];
 }
 
 /** Revalidate cached Owner recommendations against current YouTube metadata. The DB intentionally stores no channel_id. */
@@ -757,7 +798,6 @@ export async function revalidateCachedYouTubeRows(
   role: 'owner' | 'guest'
 ): Promise<SupabaseResourceRow[]> {
   const youtubeRows = rows.filter((row) => row.resource_type === 'youtube');
-  if (role === 'guest') return youtubeRows;
   if (!apiKey?.trim() || !youtubeRows.length) return [];
 
   const idsByVideoId = new Map<string, SupabaseResourceRow[]>();
@@ -788,17 +828,13 @@ export async function revalidateCachedYouTubeRows(
     if (!channelsResponse.ok) return [];
     const channelItems = (await channelsResponse.json() as { items?: YouTubeChannelItem[] }).items || [];
     const channels = new Map(channelItems.filter((channel): channel is YouTubeChannelItem & { id: string } => Boolean(channel.id)).map((channel) => [channel.id, channel]));
-    const topicTerms = getTopicTerms(ctx.topic);
-
     return videos.flatMap((video) => {
       const channelId = video.snippet?.channelId;
       const channel = channelId ? channels.get(channelId) : undefined;
       const videoId = video.id;
       if (!videoId || !channelId || !channel?.snippet?.title || video.status?.privacyStatus !== 'public') return [];
       const title = video.snippet?.title?.trim() || '';
-      const text = `${title} ${video.snippet?.description || ''}`.toLowerCase();
-      const topicMatches = topicTerms.filter((term) => text.includes(term)).length;
-      if (!title || topicMatches < Math.min(2, topicTerms.length)) return [];
+      if (!title || !hasMeaningfulTopicRelevance(ctx, title, video.snippet?.description || '')) return [];
 
       const coding = isCodingRelatedTopic(ctx);
       const approvedCodingChannel = APPROVED_CODING_CHANNELS.some((approved) => approved.channelId === channelId);
@@ -807,16 +843,19 @@ export async function revalidateCachedYouTubeRows(
       if (!coding && !approvedAzureChannel && !isEducationalChannel(channel)) return [];
 
       const durationSeconds = parseIsoDurationToSeconds(video.contentDetails?.duration);
-      if (durationSeconds < 180 || /#?shorts?\b/i.test(title)) return [];
+      if (durationSeconds < 180 || isLikelyShortVideo(video)) return [];
       const matchingRows = idsByVideoId.get(videoId) || [];
-      const language = detectVideoLanguage(video, matchingRows[0]?.language === 'te' ? 'te' : 'en');
-      if (!coding && language !== 'te' && language !== 'en') return [];
+      const language = detectVideoLanguage(video);
+      if (language !== 'te' && language !== 'en') return [];
 
+      const duration = formatDurationSeconds(durationSeconds);
       return matchingRows.filter((row) => row.is_verified).map((row) => ({
         ...row,
         title,
         channel_or_source: channel.snippet?.title || row.channel_or_source || '',
         channel_id: channelId,
+        description: video.snippet?.description || '',
+        duration: duration || null,
         language
       }));
     });
@@ -873,7 +912,7 @@ async function discoverNonCodingTutorials(
         const id = item.id?.videoId;
         if (!id || !/^[a-zA-Z0-9_-]{11}$/.test(id) || !item.snippet?.channelId) continue;
         const existing = candidates.get(id) || [];
-        existing.push({ searchLanguage: search.language, searchChannelId: item.snippet.channelId });
+        existing.push({ searchChannelId: item.snippet.channelId });
         candidates.set(id, existing);
       }
     }
@@ -898,8 +937,6 @@ async function discoverNonCodingTutorials(
     if (!channelsResp.ok) return noSuitable();
     const channelPayload = await channelsResp.json() as { items?: YouTubeChannelItem[] };
     const channels = new Map((channelPayload.items || []).filter((channel): channel is YouTubeChannelItem & { id: string } => Boolean(channel.id)).map((channel) => [channel.id, channel]));
-    const topicTerms = getTopicTerms(ctx.topic);
-
     const verified = (details.items || []).flatMap((video) => {
       const videoId = video.id;
       const channelId = video.snippet?.channelId;
@@ -910,15 +947,12 @@ async function discoverNonCodingTutorials(
       const trustedAzureChannel = ctx.trackId === 'azure' && APPROVED_AZURE_CHANNELS.some((approved) => approved.channelId === channelId);
       const trustedChannel = trustedAzureChannel || isEducationalChannel(channel);
       const durationSeconds = parseIsoDurationToSeconds(video.contentDetails?.duration);
-      const searchableTitle = title?.toLowerCase() || '';
-      const searchableDescription = video.snippet?.description?.toLowerCase() || '';
-      const titleMatches = topicTerms.filter((term) => searchableTitle.includes(term));
-      const descriptionMatches = topicTerms.filter((term) => searchableDescription.includes(term));
-      const topicRelevant = titleMatches.length >= 1 && (topicTerms.length < 2 || titleMatches.length + descriptionMatches.length >= 2);
-      if (!videoId || !channelId || !title || !channel?.snippet?.title || !exactSearchMatch || !trustedChannel || !topicRelevant || durationSeconds < 180 || /#?shorts?\b/i.test(title) || video.status?.privacyStatus !== 'public') return [];
-      const source = candidateSources.find((candidate) => candidate.searchChannelId === channelId) || candidateSources[0]!;
-      const language = detectVideoLanguage(video, source.searchLanguage);
-      const languageRank = language === 'te' ? 0 : language === 'en' ? 1 : 2;
+      const description = video.snippet?.description || '';
+      const topicRelevant = title && hasMeaningfulTopicRelevance(ctx, title, description);
+      if (!videoId || !channelId || !title || !channel?.snippet?.title || !exactSearchMatch || !trustedChannel || !topicRelevant || durationSeconds < 180 || isLikelyShortVideo(video) || video.status?.privacyStatus !== 'public') return [];
+      const language = detectVideoLanguage(video);
+      if (language !== 'te' && language !== 'en') return [];
+      const languageRank = language === 'te' ? 0 : 1;
       const channelRank = trustedAzureChannel ? 0 : 1;
       const views = Number(video.statistics?.viewCount || 0);
       const thumb = video.snippet?.thumbnails?.medium?.url || video.snippet?.thumbnails?.high?.url || video.snippet?.thumbnails?.default?.url;
@@ -932,13 +966,13 @@ async function discoverNonCodingTutorials(
         thumbnailUrl: thumb && isValidHttpsUrl(thumb) ? thumb : undefined,
         topicCovered: ctx.topic,
         explanation: (video.snippet?.description || `Verified video covering ${ctx.topic}.`).replace(/\s+/g, ' ').slice(0, 180),
-        whyUseful: `Verified non-coding video: public tutorial matched to ${ctx.topic}; language: ${language === 'unknown' ? 'not identified' : language === 'te' ? 'Telugu' : 'English'}.`,
+        whyUseful: `Verified non-coding video: public tutorial matched to ${ctx.topic} and its objectives; language: ${language === 'te' ? 'Telugu' : 'English'}.`,
         duration: formatDurationSeconds(durationSeconds),
         language,
         isVerifiedVideo: true,
         linkKind: 'verified_video' as const
       };
-      return [{ tutorial, languageRank, channelRank, views, relevance: titleMatches.length + descriptionMatches.length }];
+      return [{ tutorial, languageRank, channelRank, views, relevance: getTopicTerms(`${title} ${description}`).length }];
     });
 
     verified.sort((a, b) => a.languageRank - b.languageRank || a.channelRank - b.channelRank || b.relevance - a.relevance || b.views - a.views);
@@ -956,51 +990,8 @@ async function discoverLegacyGuestNonCodingTutorials(
   apiKey: string,
   fetchImpl: typeof fetch
 ): Promise<YouTubeDiscoveryResult> {
-  const fallback = buildLegacyGuestSearchFallbackTutorials(ctx);
-  try {
-    const searchUrl = new URL('https://www.googleapis.com/youtube/v3/search');
-    searchUrl.searchParams.set('part', 'snippet');
-    searchUrl.searchParams.set('type', 'video');
-    searchUrl.searchParams.set('maxResults', '8');
-    searchUrl.searchParams.set('relevanceLanguage', 'en');
-    searchUrl.searchParams.set('safeSearch', 'strict');
-    searchUrl.searchParams.set('q', buildTrackQueryTerms(ctx)[0]);
-    searchUrl.searchParams.set('key', apiKey);
-    const search = await fetchImpl(searchUrl.toString(), { signal: AbortSignal.timeout(8000) });
-    if (!search.ok) return { tutorials: fallback, providerStatus: 'search_fallback_quota', statusNote: 'YouTube lookup unavailable; showing existing Guest topic search links.' };
-    const payload = await search.json() as { items?: YouTubeSearchItem[] };
-    const ids = [...new Set((payload.items || []).map((item) => item.id?.videoId).filter((id): id is string => Boolean(id && /^[a-zA-Z0-9_-]{11}$/.test(id))))];
-    if (!ids.length) return { tutorials: fallback, providerStatus: 'search_fallback_quota', statusNote: 'No verified direct videos returned; showing existing Guest topic search links.' };
-    const detailsUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
-    detailsUrl.searchParams.set('part', 'snippet,contentDetails,status');
-    detailsUrl.searchParams.set('id', ids.join(','));
-    detailsUrl.searchParams.set('key', apiKey);
-    const details = await fetchImpl(detailsUrl.toString(), { signal: AbortSignal.timeout(8000) });
-    if (!details.ok) return { tutorials: fallback, providerStatus: 'search_fallback_quota', statusNote: 'YouTube details unavailable; showing existing Guest topic search links.' };
-    const videos = await details.json() as { items?: YouTubeVideoItem[] };
-    const tutorials = (videos.items || []).filter((video) => video.id && video.snippet?.title && video.snippet.channelTitle && (!video.status?.privacyStatus || video.status.privacyStatus === 'public')).slice(0, 3).map((video, index) => ({
-      id: `yt_${ctx.trackId}_d${ctx.dayNumber}_guest_${video.id}_${index + 1}`,
-      title: video.snippet?.title || ctx.topic,
-      channelName: video.snippet?.channelTitle || 'YouTube channel',
-      channelId: video.snippet?.channelId,
-      url: `https://www.youtube.com/watch?v=${video.id}`,
-      videoId: video.id,
-      topicCovered: ctx.topic,
-      explanation: (video.snippet?.description || `Video result for ${ctx.topic}`).slice(0, 160),
-      whyUseful: `Guest search result for ${ctx.topic}.`,
-      duration: formatDurationSeconds(parseIsoDurationToSeconds(video.contentDetails?.duration)),
-      language: video.snippet?.defaultAudioLanguage || video.snippet?.defaultLanguage || 'en',
-      isVerifiedVideo: true,
-      linkKind: 'verified_video' as const
-    }));
-    return tutorials.length
-      ? { tutorials, providerStatus: 'youtube_api_verified', statusNote: `Verified ${tutorials.length} Guest YouTube results.` }
-      : { tutorials: fallback, providerStatus: 'search_fallback_quota', statusNote: 'No verified direct videos returned; showing existing Guest topic search links.' };
-  } catch {
-    return { tutorials: fallback, providerStatus: 'search_fallback_quota', statusNote: 'YouTube lookup failed; showing existing Guest topic search links.' };
-  }
+  return discoverNonCodingTutorials(ctx, apiKey, fetchImpl);
 }
-
 export async function discoverYouTubeTutorials(
   ctx: SharedCurriculumDayContext,
   youtubeApiKey?: string,
@@ -3151,14 +3142,65 @@ export async function generateTrackDailyCanonical(
 
   const rawExistingCached = options?.existingCached || undefined;
   const role = options?.role || 'owner';
-  const cachedTutorials = rawExistingCached ? reusableTutorials(ctx, rawExistingCached.youtubeTutorials || [], role) : [];
+  const hasYoutubeKey = Boolean(config.youtubeApiKey?.trim());
+  const cachedSource = (rawExistingCached?.youtubeTutorials || []).filter((tutorial) => tutorial.linkKind === 'verified_video');
+  const cachedRows: SupabaseResourceRow[] = cachedSource.map((tutorial) => ({
+    track_id: trackId,
+    plan_day: dayNumber,
+    resource_type: 'youtube',
+    title: tutorial.title,
+    url: tutorial.url,
+    channel_or_source: tutorial.channelName,
+    channel_id: tutorial.channelId,
+    topic_covered: tutorial.topicCovered,
+    description: tutorial.explanation,
+    why_useful: tutorial.whyUseful,
+    duration: tutorial.duration || null,
+    language: tutorial.language,
+    is_verified: tutorial.isVerifiedVideo,
+    thumbnail_url: tutorial.thumbnailUrl || null
+  }));
+  const validatedCacheRows = await revalidateCachedYouTubeRows(
+    cachedRows,
+    ctx,
+    config.youtubeApiKey,
+    config.fetchImpl || fetch,
+    role
+  );
+  const cachedSourceById = new Map(cachedSource.map((tutorial) => [cachedVideoId(tutorial.url), tutorial]));
+  const validatedCachedTutorials = validatedCacheRows.flatMap((row) => {
+    const videoId = cachedVideoId(row.url);
+    const source = videoId ? cachedSourceById.get(videoId) : undefined;
+    if (!source || !videoId) return [];
+    return [{
+      ...source,
+      title: row.title,
+      url: row.url,
+      videoId,
+      channelName: row.channel_or_source,
+      channelId: row.channel_id || undefined,
+      topicCovered: ctx.topic,
+      explanation: row.description,
+      whyUseful: row.why_useful,
+      duration: row.duration || undefined,
+      language: row.language || 'en',
+      isVerifiedVideo: true,
+      linkKind: 'verified_video' as const
+    }];
+  });
+  const cachedDirectTutorials = reusableTutorials(ctx, validatedCachedTutorials);
+  const cachedTutorials = cachedDirectTutorials.length > 0
+    ? cachedDirectTutorials
+    : buildSearchFallbackTutorials(ctx);
   const existingCached = rawExistingCached
     ? {
         ...rawExistingCached,
-        youtubeTutorials: cachedTutorials
+        youtubeTutorials: cachedTutorials,
+        youtubeProviderStatus: cachedDirectTutorials.length > 0
+          ? 'youtube_api_verified' as const
+          : hasYoutubeKey ? 'unavailable' as const : 'search_fallback_no_key' as const
       }
     : undefined;
-  const hasYoutubeKey = Boolean(config.youtubeApiKey?.trim());
   const hasGeminiKey = Boolean(config.geminiApiKey?.trim());
 
   // Avoid unnecessary regeneration & quota burn when valid AI/YouTube resources already exist

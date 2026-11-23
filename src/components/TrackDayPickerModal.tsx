@@ -20,7 +20,8 @@ export const TrackDayPickerModal: React.FC<TrackDayPickerModalProps> = ({ dayNum
 
   if (!dayNumber) return null;
 
-  const mainDay = ALL_180_DAYS[dayNumber - 1];
+  const rawMainDay = ALL_180_DAYS[dayNumber - 1];
+  const mainDay = rawMainDay;
   const dsaDay = dayNumber <= 100 ? DSA_100_DAYS[dayNumber - 1] : null;
   const azureDay = dayNumber <= 100 ? AZURE_100_DAYS[dayNumber - 1] : null;
 
@@ -153,7 +154,7 @@ export const TrackDayPickerModal: React.FC<TrackDayPickerModalProps> = ({ dayNum
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-[#A8A29E]" />
                 <span>
-                  <strong className="text-[#292929]">DSA in C++ — 100 Days</strong> concludes on Day 100 (23 Feb 2027).
+                  <strong className="text-[#292929]">DSA in C++ — 100 Days</strong> concludes on Day 100 (02 Mar 2027).
                 </span>
               </div>
               <Lock className="w-3.5 h-3.5 text-[#A8A29E]" />
@@ -201,7 +202,7 @@ export const TrackDayPickerModal: React.FC<TrackDayPickerModalProps> = ({ dayNum
               <div className="flex items-center gap-2">
                 <CheckCircle2 className="w-4 h-4 text-[#A8A29E]" />
                 <span>
-                  <strong className="text-[#292929]">Azure — 100 Days</strong> concludes on Day 100 (23 Feb 2027).
+                  <strong className="text-[#292929]">Azure — 100 Days</strong> concludes on Day 100 (02 Mar 2027).
                 </span>
               </div>
               <Lock className="w-3.5 h-3.5 text-[#A8A29E]" />

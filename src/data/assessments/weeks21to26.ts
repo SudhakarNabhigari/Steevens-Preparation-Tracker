@@ -1543,7 +1543,7 @@ export const WEEKS_21_TO_26_ASSESSMENTS: Assessment[] = [
   }),
 
   // =========================================================================
-  // WEEK 26: Final Capstone Audit, Submission Pack, Grading Rubric, Viva & Release Rehearsal (Unlocks 14 May 2027)
+  // WEEK 26: Final Capstone Audit, Submission Pack, Grading Rubric, Viva & Release Rehearsal (Unlocks 21 May 2027)
   // =========================================================================
   buildWeekAssessment({
     weekNumber: 26,

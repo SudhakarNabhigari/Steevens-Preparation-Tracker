@@ -3,8 +3,10 @@ import {
   OWNER_RESTART_EMAIL_EARLIEST_MS
 } from '../src/utils/relaunchConfig.ts';
 import { getResolvedServerPipelineConfig } from './dailyResourcesService.ts';
+import { getSharedCurriculumDayContext } from '../supabase/functions/daily-learning-resources/catalogData.ts';
 
 export type RelaunchEmailType = 'restart' | 'launch';
+const PRODUCTION_APP_URL = 'https://my-preparation.vercel.app';
 
 function remainingParts(nowMs: number) {
   const totalSeconds = Math.max(0, Math.floor((OWNER_RELAUNCH_START_MS - nowMs) / 1000));
@@ -18,10 +20,21 @@ function remainingParts(nowMs: number) {
 
 function buildEmail(type: RelaunchEmailType, nowMs: number, appUrl: string) {
   if (type === 'launch') {
+    const dayOneTracks = [
+      ['Main Plan', getSharedCurriculumDayContext('main', 1)],
+      ['DSA in C++', getSharedCurriculumDayContext('dsa', 1)],
+      ['Azure', getSharedCurriculumDayContext('azure', 1)]
+    ] as const;
+    const trackText = dayOneTracks.map(([name, context]) =>
+      `${name} — ${context?.topic || 'Day 1'}\nFocus: ${context?.objectives.join('; ') || 'See today’s plan'}\nWork: ${context?.practicalWork || 'Open the tracker for today’s tasks.'}`
+    ).join('\n\n');
+    const trackHtml = dayOneTracks.map(([name, context]) =>
+      `<li><strong>${name}: ${context?.topic || 'Day 1'}</strong><br>Focus: ${context?.objectives.join('; ') || 'See today’s plan'}<br>Work: ${context?.practicalWork || 'Open the tracker for today’s tasks.'}</li>`
+    ).join('');
     return {
-      subject: 'Your Preparation Journey Starts Today — Day 1 Is Live!',
-      text: `Hello Steeven,\n\nYour Steeven's Preparation Tracker has been updated, and your new preparation journey officially begins today!\n\nYour Main Plan, DSA in C++, and Azure Preparation plans are now unlocked.\n\nToday is Day 1. Stay consistent, complete your daily targets, and keep moving towards your career goals.\n\nAll the best!\n— Steeven's Preparation Tracker\n\n${appUrl}`,
-      html: `<p>Hello Steeven,</p><p>Your Steeven's Preparation Tracker has been updated, and your new preparation journey officially begins today!</p><p>Your Main Plan, DSA in C++, and Azure Preparation plans are now unlocked.</p><p><strong>Today is Day 1.</strong> Stay consistent, complete your daily targets, and keep moving towards your career goals.</p><p>All the best!<br>— Steeven's Preparation Tracker</p><p><a href="${appUrl}">Open your tracker</a></p>`
+      subject: 'Day 1 — Monday, November 23, 2026 | Your Preparation Journey Starts Today',
+      text: `Hello Steeven,\n\nDay 1 — Monday, November 23, 2026\nYour 180-day preparation cycle is live.\n\nToday’s plan\n\n${trackText}\n\nAll the best!\n— Steeven's Preparation Tracker\n\nOpen the production tracker: ${appUrl}`,
+      html: `<p>Hello Steeven,</p><h1>Day 1 — Monday, November 23, 2026</h1><p>Your 180-day preparation cycle is live. Here is the correct Day 1 plan for each track:</p><ul>${trackHtml}</ul><p>All the best!<br>— Steeven's Preparation Tracker</p><p><a href="${appUrl}">Open the production tracker</a></p>`
     };
   }
   const remaining = remainingParts(nowMs);
@@ -72,9 +85,13 @@ export async function sendOwnerRelaunchAnnouncement(
   const baseUrl = config.supabaseUrl?.trim();
   const serviceKey = config.supabaseServiceRoleKey?.trim();
   const recipient = config.dailyRecipientEmail?.trim();
+  const ownerEmail = (process.env.OWNER_SUPABASE_EMAIL || process.env.VITE_OWNER_AUTH_EMAIL)?.trim();
   const resendKey = config.resendApiKey?.trim();
   const from = config.resendFromEmail?.trim();
-  if (!baseUrl || !serviceKey || !recipient) throw new Error('Relaunch email idempotency storage is not configured on the server.');
+  if (!baseUrl || !serviceKey) throw new Error('Relaunch email idempotency storage is not configured on the server.');
+  if (!recipient || !ownerEmail || recipient.toLowerCase() !== ownerEmail.toLowerCase()) {
+    throw new Error('Relaunch email recipient must be explicitly configured and match the configured Owner email.');
+  }
 
   const claimResponse = await fetch(`${baseUrl.replace(/\/$/, '')}/rest/v1/rpc/claim_owner_relaunch_email`, {
     method: 'POST',
@@ -101,7 +118,8 @@ export async function sendOwnerRelaunchAnnouncement(
       ? Date.parse(snapshotRows[0].generated_at)
       : Number.NaN;
     if (!Number.isFinite(emailSnapshotMs)) throw new Error('The stored relaunch email countdown snapshot is unavailable.');
-    const email = buildEmail(type, emailSnapshotMs, config.appUrl || '');
+    const emailAppUrl = type === 'launch' ? PRODUCTION_APP_URL : config.appUrl || PRODUCTION_APP_URL;
+    const email = buildEmail(type, emailSnapshotMs, emailAppUrl);
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
@@ -113,10 +131,11 @@ export async function sendOwnerRelaunchAnnouncement(
     });
     const payload = await response.json().catch(() => ({})) as { id?: string; message?: string };
     if (!response.ok) throw new Error(payload.message || `Resend returned HTTP ${response.status}.`);
+    if (!payload.id) throw new Error('Resend accepted the request without returning a provider message ID.');
     await updateOutbox(baseUrl, serviceKey, type, {
       status: 'sent',
       sent_at: new Date(nowMs).toISOString(),
-      provider_message_id: payload.id || null,
+      provider_message_id: payload.id,
       failure_reason: null,
       claimed_until: null
     });

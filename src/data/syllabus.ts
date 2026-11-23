@@ -1,7 +1,7 @@
 import type { DaySchedule } from '../types';
 
-export const START_DATE_IST = '2026-11-16T00:00:00+05:30';
-export const END_DATE_IST = '2027-05-14T23:59:59+05:30';
+export const START_DATE_IST = '2026-11-23T00:00:00+05:30';
+export const END_DATE_IST = '2027-05-21T23:59:59+05:30';
 
 // Raw metadata for the 12 core modules + final 12 days
 interface ModuleDef {
@@ -1944,7 +1944,7 @@ const rawModules: ModuleDef[] = [
 
 // Helper to compute ISO date string and DayOfWeek
 export function generate180Days(): DaySchedule[] {
-  const startDate = new Date('2026-11-16T00:00:00+05:30'); // Day 1
+  const startDate = new Date(START_DATE_IST); // Day 1, official IST cycle start
   const days: DaySchedule[] = [];
   const dayNames: DaySchedule['dayOfWeek'][] = [
     'Sunday',

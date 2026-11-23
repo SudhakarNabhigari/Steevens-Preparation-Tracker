@@ -20,7 +20,7 @@ import {
 } from '../data/azureSyllabus';
 import { DAILY_PREPARATION_START_ISO_IST, getDayLockStatus, SUB_TRACK_MAX_DAYS } from '../utils/dailyLock';
 import { TrackDaySchedule } from '../types';
-import { OWNER_RELAUNCH_START_ISO_IST, shiftScheduleDate } from '../utils/relaunch';
+import { OWNER_RELAUNCH_START_ISO_IST } from '../utils/relaunch';
 import {
   Code2,
   Cloud,
@@ -74,12 +74,12 @@ export const TrackPreparationPage: React.FC<TrackPreparationPageProps> = ({ trac
 
   const isDsa = trackId === 'dsa';
   const legacyDays: TrackDaySchedule[] = isDsa ? DSA_100_DAYS : AZURE_100_DAYS;
-  const days: TrackDaySchedule[] = userRole === 'owner' ? legacyDays.map((entry) => shiftScheduleDate(entry, 7)) : legacyDays;
+  const days: TrackDaySchedule[] = legacyDays;
   const overview = isDsa ? DSA_PLAN_OVERVIEW : AZURE_PLAN_OVERVIEW;
   const pdfUrl = isDsa ? DSA_PDF_URL : AZURE_PDF_URL;
   const pdfFilename = isDsa ? DSA_PDF_FILENAME : AZURE_PDF_FILENAME;
-  const startDate = userRole === 'owner' ? '23 Nov 2026' : isDsa ? DSA_START_DATE : AZURE_START_DATE;
-  const endDate = userRole === 'owner' ? '02 Mar 2027' : isDsa ? DSA_END_DATE : AZURE_END_DATE;
+  const startDate = isDsa ? DSA_START_DATE : AZURE_START_DATE;
+  const endDate = isDsa ? DSA_END_DATE : AZURE_END_DATE;
   const totalPlannedHours = isDsa ? DSA_TOTAL_PLANNED_HOURS : AZURE_TOTAL_PLANNED_HOURS;
 
   const trackProgress = isDsa ? state.dsaProgress : state.azureProgress;

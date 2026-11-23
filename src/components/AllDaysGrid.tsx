@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../context/AppContext';
 import { ALL_180_DAYS } from '../data/syllabus';
-import { shiftScheduleDate } from '../utils/relaunch';
 import {
   Search,
   ChevronRight
@@ -10,7 +9,6 @@ import {
 export const AllDaysGrid: React.FC = () => {
   const {
     currentDayNumber,
-    userRole,
     isDayUnlocked,
     getDayStatus,
     getDayTaskCompletion,
@@ -21,7 +19,7 @@ export const AllDaysGrid: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedModuleFilter, setSelectedModuleFilter] = useState<number | 'all'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'completed' | 'in-progress' | 'incomplete' | 'locked'>('all');
-  const days = userRole === 'owner' ? ALL_180_DAYS.map((day) => shiftScheduleDate(day, 7)) : ALL_180_DAYS;
+  const days = ALL_180_DAYS;
 
   const filteredDays = useMemo(() => {
     return days.filter(day => {
@@ -69,7 +67,7 @@ export const AllDaysGrid: React.FC = () => {
           180 DAYS OF PREPARATION SCHEDULE
         </h1>
         <p className="text-xs sm:text-sm text-[#78716C] mt-1">
-          Complete daily syllabus breakdown from {userRole === 'owner' ? '23 November 2026 to 21 May 2027' : '16 November 2026 to 14 May 2027'}.
+          Complete daily syllabus breakdown from 23 November 2026 to 21 May 2027.
         </p>
       </div>
 

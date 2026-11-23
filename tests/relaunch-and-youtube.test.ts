@@ -303,7 +303,7 @@ test('non-coding recommendations prefer verified Telugu, then English; Azure fav
         const isTelugu = id === teluguVideoId;
         const channelTitle = isTelugu ? 'Trusted Telugu Cloud Learning' : channelId === englishChannelId ? 'English Learning Channel' : 'Microsoft Azure';
         return {
-        id, snippet: { title: `${currentContext.topic}${isTelugu ? ' Telugu వివరణ' : ' explained'}`, channelTitle, channelId, description: `Educational ${isTelugu ? 'Telugu' : 'English'} tutorial explaining ${currentContext.topic}`, defaultAudioLanguage: isTelugu ? 'te' : 'en', thumbnails: { medium: { url: `https://i.ytimg.com/vi/${id}/mqdefault.jpg` } } },
+        id, snippet: { title: `${currentContext.topic} ${currentContext.objectives[0]}${isTelugu ? ' Telugu వివరణ' : ' explained'}`, channelTitle, channelId, description: `Educational ${isTelugu ? 'Telugu' : 'English'} tutorial explaining ${currentContext.topic} ${currentContext.objectives.join(' ')}`, defaultAudioLanguage: isTelugu ? 'te' : 'en', thumbnails: { medium: { url: `https://i.ytimg.com/vi/${id}/mqdefault.jpg` } } },
         contentDetails: { duration: 'PT12M' }, status: { privacyStatus: 'public' }, statistics: { viewCount: '50000' }
       };
       });
@@ -345,10 +345,166 @@ test('non-coding recommendations prefer verified Telugu, then English; Azure fav
 
     const guestResult = await discoverYouTubeTutorials(mainContext, '', fetch, 'guest');
     assert.equal(guestResult.providerStatus, 'search_fallback_no_key');
-    assert.equal(guestResult.tutorials.length, 3, 'Guest keeps its existing labeled search links when the API key is unavailable.');
+    assert.equal(guestResult.tutorials.length, 3, 'Guest receives topic and objective search links when verification is unavailable.');
+    assert.ok(guestResult.tutorials.every((tutorial) => tutorial.linkKind === 'youtube_search_fallback' && tutorial.url.includes(encodeURIComponent(mainContext.topic))));
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('Owner and Guest non-coding discovery requires exact topic/objective relevance and verified public education videos', async () => {
+  const base = getSharedCurriculumDayContext('main', 1)!;
+  const ctx = {
+    ...base,
+    topic: 'OAuth token rotation',
+    objectives: ['Refresh token expiry handling', 'Persist revoked token events']
+  };
+  const trustedChannelId = 'UCtrustedEdu000001234';
+  const makeFetch = (options: {
+    title: string;
+    description: string;
+    duration?: string;
+    channelId?: string;
+    channelTitle?: string;
+    channelDescription?: string;
+    subscribers?: string;
+    videoCount?: string;
+    audioLanguage?: string | null;
+  }): typeof fetch => async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/search')) {
+      return new Response(JSON.stringify({ items: [{ id: { videoId: 'topicvid001' }, snippet: { channelId: options.channelId || trustedChannelId } }] }), { status: 200 });
+    }
+    if (url.pathname.endsWith('/videos')) {
+      return new Response(JSON.stringify({ items: [{
+        id: 'topicvid001',
+        snippet: {
+          title: options.title,
+          description: options.description,
+          channelTitle: options.channelTitle || 'OAuth Learning Academy',
+          channelId: options.channelId || trustedChannelId,
+          defaultAudioLanguage: options.audioLanguage === undefined ? 'en' : options.audioLanguage || undefined
+        },
+        contentDetails: { duration: options.duration || 'PT10M' },
+        status: { privacyStatus: 'public' }
+      }] }), { status: 200 });
+    }
+    if (url.pathname.endsWith('/channels')) {
+      return new Response(JSON.stringify({ items: [{
+        id: options.channelId || trustedChannelId,
+        snippet: {
+          title: options.channelTitle || 'OAuth Learning Academy',
+          description: options.channelDescription || 'Technology education, courses and engineering tutorials.'
+        },
+        statistics: { subscriberCount: options.subscribers || '50000', videoCount: options.videoCount || '250' }
+      }] }), { status: 200 });
+    }
+    return new Response(null, { status: 404 });
+  };
+
+  const relevant = makeFetch({
+    title: 'OAuth token rotation and refresh flow',
+    description: 'A tutorial about refresh token expiry handling and persisting revoked token events.'
+  });
+  for (const role of ['owner', 'guest'] as const) {
+    const accepted = await discoverYouTubeTutorials(ctx, 'fake-test-key', relevant, role);
+    assert.equal(accepted.tutorials.length, 1, `${role} accepts a verified matching tutorial`);
+    assert.equal(accepted.tutorials[0]?.isVerifiedVideo, true);
+  }
+
+  const unrelated = await discoverYouTubeTutorials(ctx, 'fake-test-key', makeFetch({
+    title: 'Python programming course',
+    description: 'General Python language tips and software development.'
+  }), 'guest');
+  assert.equal(unrelated.tutorials.length, 0, 'an unrelated public video is rejected');
+
+  const genericOverlap = await discoverYouTubeTutorials(ctx, 'fake-test-key', makeFetch({
+    title: 'OAuth technology tutorial',
+    description: 'A general OAuth overview for technology teams.'
+  }), 'owner');
+  assert.equal(genericOverlap.tutorials.length, 0, 'one generic matching word is insufficient');
+
+  const short = await discoverYouTubeTutorials(ctx, 'fake-test-key', makeFetch({
+    title: 'OAuth token rotation #Shorts',
+    description: 'Refresh token expiry handling and persist revoked token events.'
+  }), 'guest');
+  assert.equal(short.tutorials.length, 0, 'Shorts are rejected');
+
+  const underMinimum = await discoverYouTubeTutorials(ctx, 'fake-test-key', makeFetch({
+    title: 'OAuth token rotation and refresh flow',
+    description: 'Refresh token expiry handling and persist revoked token events.',
+    duration: 'PT2M59S'
+  }), 'owner');
+  assert.equal(underMinimum.tutorials.length, 0, 'videos under 180 seconds are rejected');
+
+  const unknownLanguage = await discoverYouTubeTutorials(ctx, 'fake-test-key', makeFetch({
+    title: 'OAuth token rotation and refresh flow',
+    description: 'Refresh token expiry handling and persist revoked token events.',
+    audioLanguage: null
+  }), 'guest');
+  assert.equal(unknownLanguage.tutorials.length, 0, 'language cannot be inferred from the search query or cached row');
+
+  const untrusted = await discoverYouTubeTutorials(ctx, 'fake-test-key', makeFetch({
+    title: 'OAuth token rotation and refresh flow',
+    description: 'Refresh token expiry handling and persist revoked token events.',
+    channelId: 'UCuntrusted0000000001',
+    channelTitle: 'Random personal uploads',
+    channelDescription: 'Personal videos.',
+    subscribers: '25',
+    videoCount: '2'
+  }), 'guest');
+  assert.equal(untrusted.tutorials.length, 0, 'untrusted channels are rejected');
+
+  const azure = getSharedCurriculumDayContext('azure', 1)!;
+  const azureLooseMatch = await discoverYouTubeTutorials(azure, 'fake-test-key', makeFetch({
+    title: 'Cloud history for beginners',
+    description: 'A generic cloud overview with no Day 1 shared responsibility details.'
+  }), 'owner');
+  assert.equal(azureLooseMatch.tutorials.length, 0, 'Azure requires its exact topic and objective, not loose cloud overlap');
+
+  const apiFailure = await discoverYouTubeTutorials(ctx, 'fake-test-key', async () => new Response('unavailable', { status: 503 }), 'guest');
+  assert.equal(apiFailure.tutorials.some((tutorial) => tutorial.linkKind === 'verified_video'), false);
+  assert.equal(apiFailure.tutorials.length, 0, 'API failure fails closed without direct video links');
+});
+
+test('Guest cached YouTube rows are revalidated and unrelated or unverifiable direct videos fail closed', async () => {
+  const ctx = getSharedCurriculumDayContext('azure', 1)!;
+  const cached = [{
+    track_id: 'azure' as const,
+    plan_day: 1,
+    resource_type: 'youtube',
+    title: 'cached unrelated video',
+    url: 'https://www.youtube.com/watch?v=topicvid001',
+    channel_or_source: 'untrusted cached channel',
+    topic_covered: ctx.topic,
+    description: 'cached description claims relevance',
+    why_useful: 'cached claim',
+    is_verified: true,
+    language: 'en'
+  }];
+  const unrelatedMetadata: typeof fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/videos')) return new Response(JSON.stringify({ items: [{
+      id: 'topicvid001',
+      snippet: { title: 'General cloud history', description: 'Cloud technology overview unrelated to the curriculum topic.', channelId: 'UCuntrusted0000000001', defaultAudioLanguage: 'en' },
+      contentDetails: { duration: 'PT10M' },
+      status: { privacyStatus: 'public' }
+    }] }), { status: 200 });
+    if (url.pathname.endsWith('/channels')) return new Response(JSON.stringify({ items: [{
+      id: 'UCuntrusted0000000001',
+      snippet: { title: 'Random uploads', description: 'Personal channel.' },
+      statistics: { subscriberCount: '10', videoCount: '2' }
+    }] }), { status: 200 });
+    return new Response(null, { status: 404 });
+  };
+  const rejected = await revalidateCachedYouTubeRows(cached, ctx, 'fake-test-key', unrelatedMetadata, 'guest');
+  assert.deepEqual(rejected, []);
+
+  const apiFailure = await revalidateCachedYouTubeRows(cached, ctx, 'fake-test-key', async () => new Response('unavailable', { status: 503 }), 'guest');
+  assert.deepEqual(apiFailure, [], 'failed metadata lookups never return cached direct video URLs');
+
+  const noKey = await revalidateCachedYouTubeRows(cached, ctx, undefined, unrelatedMetadata, 'guest');
+  assert.deepEqual(noKey, [], 'missing verification credentials fail closed');
 });
 
 test('cached Owner YouTube recommendations are revalidated against actual video and channel metadata', async () => {
@@ -372,7 +528,7 @@ test('cached Owner YouTube recommendations are revalidated against actual video 
     if (url.pathname.endsWith('/videos')) {
       return new Response(JSON.stringify({ items: [{
         id: videoId,
-        snippet: { title: `Azure ${ctx.topic} explained`, description: `Training for ${ctx.topic}`, channelId, defaultAudioLanguage: 'en' },
+        snippet: { title: `Azure ${ctx.topic} ${ctx.objectives[0]} explained`, description: `Training for ${ctx.topic}. ${ctx.objectives.join(' ')}`, channelId, defaultAudioLanguage: 'en' },
         contentDetails: { duration: 'PT12M' },
         status: { privacyStatus: 'public' }
       }] }), { status: 200 });
@@ -389,7 +545,7 @@ test('cached Owner YouTube recommendations are revalidated against actual video 
 
   const valid = await revalidateCachedYouTubeRows(cached, ctx, 'unit-test-key', fetchForChannel(APPROVED_AZURE_CHANNELS[0].channelId), 'owner');
   assert.equal(valid.length, 1);
-  assert.equal(valid[0]?.title, `Azure ${ctx.topic} explained`);
+  assert.equal(valid[0]?.title, `Azure ${ctx.topic} ${ctx.objectives[0]} explained`);
   assert.equal(valid[0]?.channel_or_source, 'Microsoft Azure');
   assert.equal(valid[0]?.channel_id, APPROVED_AZURE_CHANNELS[0].channelId);
 
@@ -405,6 +561,7 @@ test('relaunch email claim is idempotent and retries do not send duplicate mail'
     SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-key',
     OWNER_SUPABASE_USER_ID: '00000000-0000-4000-8000-000000000001',
     DAILY_REPORT_RECIPIENT_EMAIL: 'owner@example.test',
+    OWNER_SUPABASE_EMAIL: 'owner@example.test',
     RESEND_API_KEY: 'unit-test-resend-key',
     RESEND_FROM_EMAIL: 'tracker@example.test',
     APP_URL: 'https://tracker.example.test'
@@ -472,6 +629,7 @@ test('failed relaunch delivery retries with the original server countdown snapsh
     SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-key',
     OWNER_SUPABASE_USER_ID: '00000000-0000-4000-8000-000000000001',
     DAILY_REPORT_RECIPIENT_EMAIL: 'owner@example.test',
+    OWNER_SUPABASE_EMAIL: 'owner@example.test',
     RESEND_API_KEY: 'unit-test-resend-key',
     RESEND_FROM_EMAIL: 'tracker@example.test',
     APP_URL: 'https://tracker.example.test'
@@ -526,16 +684,19 @@ test('Day 1 launch email is accepted only after the unlock instant and only on t
     SUPABASE_SERVICE_ROLE_KEY: 'unit-test-service-key',
     OWNER_SUPABASE_USER_ID: '00000000-0000-4000-8000-000000000001',
     DAILY_REPORT_RECIPIENT_EMAIL: 'owner@example.test',
+    OWNER_SUPABASE_EMAIL: 'owner@example.test',
     RESEND_API_KEY: 'unit-test-resend-key',
     RESEND_FROM_EMAIL: 'tracker@example.test',
     APP_URL: 'https://tracker.example.test'
   });
   let emailSent = false;
+  let sentEmail: Record<string, unknown> | null = null;
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes('/rpc/claim_owner_relaunch_email')) return new Response('true', { status: 200 });
     if (url === 'https://api.resend.com/emails') {
       emailSent = true;
+      sentEmail = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
       return new Response(JSON.stringify({ id: 'launch-message-id' }), { status: 200 });
     }
     if (url.includes('/owner_relaunch_emails?')) {
@@ -551,6 +712,12 @@ test('Day 1 launch email is accepted only after the unlock instant and only on t
     const result = await sendOwnerRelaunchAnnouncement('launch', launchMs);
     assert.equal(result.sent, true);
     assert.equal(emailSent, true);
+    const message = sentEmail as unknown as Record<string, unknown>;
+    assert.match(String(message.subject), /Day 1.*Monday, November 23, 2026/);
+    assert.match(String(message.text), /Product framing/);
+    assert.match(String(message.text), /C\+\+ setup and first program/);
+    assert.match(String(message.text), /Cloud concepts and shared responsibility/);
+    assert.match(String(message.text), /https:\/\/my-preparation\.vercel\.app/);
   } finally {
     globalThis.fetch = originalFetch;
     for (const key of Object.keys(process.env)) {

@@ -5,7 +5,7 @@ import { DSA_100_DAYS } from '../data/dsaSyllabus';
 import { AZURE_100_DAYS } from '../data/azureSyllabus';
 import { DaySchedule, TrackDaySchedule, TrackId } from '../types';
 import { DAILY_PREPARATION_START_ISO_IST, getDayLockStatus, MAIN_TRACK_MAX_DAYS, SUB_TRACK_MAX_DAYS } from '../utils/dailyLock';
-import { OWNER_RELAUNCH_START_ISO_IST, shiftScheduleDate } from '../utils/relaunch';
+import { OWNER_RELAUNCH_START_ISO_IST } from '../utils/relaunch';
 import {
   Calendar as CalendarIcon,
   ChevronLeft,
@@ -70,7 +70,7 @@ export const PreparationCalendarPage: React.FC = () => {
       setViewMonth(4); // May 2027
     } else {
       setViewYear(2027);
-      setViewMonth(userRole === 'owner' ? 2 : 1); // Owner cycle ends in March; legacy Guest ends in February.
+      setViewMonth(2); // The 100-day tracks now conclude in March.
     }
   };
 
@@ -85,11 +85,11 @@ export const PreparationCalendarPage: React.FC = () => {
 
     const dayMap = new Map<string, UnifiedCalendarDay>();
     if (selectedTrack === 'main') {
-      (userRole === 'owner' ? ALL_180_DAYS.map((d) => shiftScheduleDate(d, 7)) : ALL_180_DAYS).forEach(d => dayMap.set(d.isoDate, { kind: 'main', data: d }));
+      ALL_180_DAYS.forEach(d => dayMap.set(d.isoDate, { kind: 'main', data: d }));
     } else if (selectedTrack === 'dsa') {
-      (userRole === 'owner' ? DSA_100_DAYS.map((d) => shiftScheduleDate(d, 7)) : DSA_100_DAYS).forEach(d => dayMap.set(d.isoDate, { kind: 'track', data: d }));
+      DSA_100_DAYS.forEach(d => dayMap.set(d.isoDate, { kind: 'track', data: d }));
     } else {
-      (userRole === 'owner' ? AZURE_100_DAYS.map((d) => shiftScheduleDate(d, 7)) : AZURE_100_DAYS).forEach(d => dayMap.set(d.isoDate, { kind: 'track', data: d }));
+      AZURE_100_DAYS.forEach(d => dayMap.set(d.isoDate, { kind: 'track', data: d }));
     }
 
     const cells: Array<{
@@ -118,7 +118,7 @@ export const PreparationCalendarPage: React.FC = () => {
     }
 
     return cells;
-  }, [viewYear, viewMonth, selectedTrack, userRole]);
+  }, [viewYear, viewMonth, selectedTrack]);
 
   const monthNames = [
     'January', 'February', 'March', 'April', 'May', 'June',
@@ -159,8 +159,8 @@ export const PreparationCalendarPage: React.FC = () => {
           </h1>
           <p className="text-xs sm:text-sm text-[#78716C] mt-1">
             {selectedTrack === 'main'
-              ? `Visual calendar from ${userRole === 'owner' ? '23 November 2026 to 21 May 2027' : '16 November 2026 to 14 May 2027'} (Main Plan).`
-              : `Visual calendar from ${userRole === 'owner' ? '23 November 2026 to 02 March 2027' : '16 November 2026 to 23 February 2027'} (100-Day Independent Track).`}
+              ? 'Visual calendar from 23 November 2026 to 21 May 2027 (Main Plan).'
+              : 'Visual calendar from 23 November 2026 to 02 March 2027 (100-Day Independent Track).'}
           </p>
         </div>
 

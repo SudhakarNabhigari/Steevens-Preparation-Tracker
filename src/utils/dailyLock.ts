@@ -1,4 +1,4 @@
-export const DAILY_PREPARATION_START_ISO_IST = '2026-11-16T00:00:00+05:30';
+export const DAILY_PREPARATION_START_ISO_IST = '2026-11-23T00:00:00+05:30';
 export const MAIN_TRACK_MAX_DAYS = 180;
 export const SUB_TRACK_MAX_DAYS = 100;
 
@@ -12,8 +12,8 @@ export function isValidPrepDay(dayNumber: number, maxDay: number = MAIN_TRACK_MA
 
 /**
  * Computes exact midnight Asia/Kolkata (UTC+05:30) ISO timestamp for dayNumber (1..maxDay).
- * Day 1 => 2026-11-16T00:00:00+05:30
- * Day 2 => 2026-11-17T00:00:00+05:30
+ * Day 1 => 2026-11-23T00:00:00+05:30
+ * Day 2 => 2026-11-24T00:00:00+05:30
  */
 export function getDayUnlockIsoIst(dayNumber: number, maxDay: number = MAIN_TRACK_MAX_DAYS, startIsoIst: string = DAILY_PREPARATION_START_ISO_IST): string {
   const safeDay = isValidPrepDay(dayNumber, maxDay) ? dayNumber : 1;
@@ -58,7 +58,7 @@ export function isDayUnlockedByIstClock(
 }
 
 /**
- * Returns 0 before 16 Nov 2026 00:00 IST, 1 on 16 Nov 2026, 2 on 17 Nov 2026, etc. (clamped to maxDay).
+ * Returns 0 before 23 Nov 2026 00:00 IST, 1 on 23 Nov 2026, 2 on 24 Nov 2026, etc. (clamped to maxDay).
  */
 export function getUnlockedDayCountByIstClock(
   nowMs: number = Date.now(),

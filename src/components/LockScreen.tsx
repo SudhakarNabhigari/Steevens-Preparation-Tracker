@@ -31,7 +31,7 @@ export const LockScreen: React.FC = () => {
             YOUR 180-DAY PREPARATION JOURNEY WILL START SOON!
           </h1>
           <p className="text-base sm:text-lg text-[#78716C] font-medium">
-            This preparation will start on <span className="text-[#E7826D] font-bold">16 November 2026</span> at <span className="text-[#E7826D] font-bold">12:00 AM IST</span>.
+            This preparation will start on <span className="text-[#E7826D] font-bold">23 November 2026</span> at <span className="text-[#E7826D] font-bold">12:00 AM IST</span>.
           </p>
           <p className="text-xs sm:text-sm text-[#78716C] max-w-xl mx-auto">
             All daily tasks, timers, completion checkboxes, and weekly assessments will automatically unlock once the official start time arrives.
@@ -90,11 +90,11 @@ export const LockScreen: React.FC = () => {
           <div className="mt-6 pt-5 border-t border-[#E0DCD3] flex flex-wrap items-center justify-center gap-x-6 gap-y-2 text-xs text-[#78716C]">
             <span className="flex items-center gap-1.5 font-medium">
               <Calendar className="w-3.5 h-3.5 text-[#E7826D]" />
-              <span>Start: 16 Nov 2026, 12:00 AM IST</span>
+              <span>Start: 23 Nov 2026, 12:00 AM IST</span>
             </span>
             <span className="flex items-center gap-1.5 font-medium">
               <Calendar className="w-3.5 h-3.5 text-[#E7826D]" />
-              <span>End: 14 May 2027</span>
+              <span>End: 21 May 2027</span>
             </span>
             <span className="flex items-center gap-1.5 font-medium">
               <Clock className="w-3.5 h-3.5 text-[#E7826D]" />

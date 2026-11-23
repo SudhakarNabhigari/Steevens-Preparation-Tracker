@@ -1,4 +1,4 @@
-export const PREPARATION_START_ISO_IST = '2026-11-16T00:00:00+05:30';
+export const PREPARATION_START_ISO_IST = '2026-11-23T00:00:00+05:30';
 export const TOTAL_ASSESSMENT_WEEKS = 26;
 
 const START_EPOCH_MS = new Date(PREPARATION_START_ISO_IST).getTime();
@@ -11,7 +11,7 @@ export function isValidAssessmentWeek(weekNumber: number): boolean {
 
 /**
  * Weeks 1-25 unlock on their scheduled Saturday checkpoint (Day 6, 13, 20, ..., 174).
- * Week 26 is the final partial week (Days 176-180) and unlocks on Day 180 (14 May 2027).
+ * Week 26 is the final partial week (Days 176-180) and unlocks on Day 180 (21 May 2027).
  */
 export function getScheduledDayForWeek(weekNumber: number): number {
   if (!isValidAssessmentWeek(weekNumber)) return 180;
